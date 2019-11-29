@@ -1,7 +1,8 @@
 # Import packages
 import sqlite3
 import pandas as pd
-
+import os
+from datetime import date
 # -------------- Querying the database file
 
 # set db path
@@ -67,8 +68,8 @@ engage_df.head()
 # Left join the 2 tables on Customer Identity and reset the index
 combined_df = pd.merge(engage_df, lob_df, on='Customer Identity', how='left')
 
-# Show the head of the new data frame
-print(combined_df.columns)
+# Load original columns in a variable for later use
+original_columns = combined_df.columns
 
 # Show a description of the data frame
 print(combined_df.describe(include='all'))
@@ -76,12 +77,12 @@ print(combined_df.describe(include='all'))
 # Drop 'index_x' and 'index_y' since they are not useful anymore
 combined_df.drop(['index_y', 'index_x'], axis=1, inplace=True)
 
-# !!!!!!!!!!! I'd like to comment this part, but I'm not sure: Set columns names
+# Set simpler columns names to facilitate analysis
 combined_df.set_axis(['customer_id',
                       'policy_creation_year',
                       'birth_year',
                       'education_lvl',
-                      'growth_monthly_salary',
+                      'gross_monthly_salary',
                       'geographic_area',
                       'has_children',
                       'customer_monetary_value',
@@ -99,40 +100,47 @@ print(combined_df.shape)
 # Show the type of each column
 combined_df.dtypes
 
-# Create a one-hot encoded set of the type values for 'education_lvl'
-edu_enc = pd.get_dummies(combined_df['education_lvl'])
-edu_enc.head()
-edu_values = combined_df.education_lvl.unique()
-
-# Concatenate back to the DataFrame
-combined_df = pd.concat([combined_df, edu_enc], axis=1)
-combined_df.dtypes
-
 # Since education level is the only column with string values
 # it is convenient to transform it from categorical to numerical.
-
 # Before doing that, it is possible to split the education columns into two
 # columns, one with numeric part and the other one with the education description
 combined_df[['edu_code', 'edu_desc']] = combined_df['education_lvl'].str.split(" - ", expand=True)
 
 # Delete education_lvl column, since its information is into the two new columns: 'edu_numb', 'edu_desc'
-combined_df = combined_df.drop(['education_lvl'], axis=1)
+combined_df = combined_df.drop(['education_lvl','edu_code'], axis=1)
 
-# Checking for missing data using isnull() function
-null_values = combined_df.isnull()
+# Create a one-hot encoded set of the type values for 'education_lvl'
+edu_enc = pd.get_dummies(combined_df['edu_desc'])
+edu_enc.head()
+edu_values = combined_df.edu_desc.unique()
 
-# Calculating the % of null values per column
-null_values_prc = (null_values.sum() / len(combined_df))*100
+# Concatenate back to the DataFrame
+combined_df = pd.concat([combined_df, edu_enc], axis=1)
+
+
+# Calculate how old is each customer's first policy
+# and create a new column named 'Cust_pol_age'
+today_year = int(date.today().year)
+combined_df['cust_pol_age'] = today_year - combined_df['policy_creation_year']
+
+# Do the same with 'birth_year column' to get the customers' ages
+combined_df['cust_age'] = today_year - combined_df['birth_year']
+
+combined_df.head()
+
+# Checking for missing data using isnull() function & calculating the % of null values per column
+null_values_prc = (combined_df.isnull().sum() / len(combined_df))*100
 
 # Show the distribution of missing data per column
 print('This is the missing data distribution per column (%):\n', round(null_values_prc, 2))
 print('')
 
 # Show the percentage of all rows with missing data, no matter which column
-null_values_prc_sum = (null_values.sum() / len(combined_df)).sum()
+null_values_prc_sum = (combined_df.isnull().sum() / len(combined_df)).sum()
+
 print('The sum of percentage of missing data for all rows is: ',
       round(null_values_prc_sum*100, 2), '% \n',
-     'which are ', null_values.sum().sum(), 'rows of the total ', len(combined_df), 'rows')
+     'which are ', combined_df.isnull().sum().sum(), 'rows of the total ', len(combined_df), 'rows')
 
 # Assuming there are no more than 1 missing value per row,
 # The number of rows with null values is below 5%,
@@ -153,11 +161,11 @@ print("Original data frame length:",
       "\nWhich is ", round(((len(combined_df) - len(df)) / len(combined_df)) * 100, 2),
       "% of the orignal data.")
 
-# Defining each column type value witha  dictionary
-type_dict = {'customer_id' : int,
+# Defining each column type value with a  dictionary
+type_dict = {'customer_id': int,
             'policy_creation_year' : int,
             'birth_year' : int,
-            'growth_monthly_salary' : float,
+            'gross_monthly_salary' : float,
             'geographic_area' : int,
             'has_children' : int,
             'customer_monetary_value' : float,
@@ -167,10 +175,14 @@ type_dict = {'customer_id' : int,
             'health_premiums' : float,
             'life_premiums' : float,
             'work_premiums' : float,
-            'edu_code' : int,
             'edu_desc' : str,
             'cust_pol_age' : int,
-            'cust_age' : int}
+            'cust_age' : int,
+            'BSc/MSc' : int,
+            'Basic' : int,
+            'High School' : int,
+            'PhD' : int}
+df.columns
 df = df.astype(type_dict)
 df.dtypes
 
@@ -189,8 +201,6 @@ df.dtypes
 # can be calculated prior, as a requirement to get (acquisition cost)
 
 # Calculating and adding 'Customer annual profit' to the data frame
-# But changing the given column name before
-df.rename(columns={'growth_monthly_salary':'gross_monthly_salary'}, inplace=True)
 df['cust_annual_prof'] = df['gross_monthly_salary']*12  # Please, let me know if 12 is OK, in Panama is 13
 
 # Calculating the acquisition cost:
@@ -229,13 +239,13 @@ print("2. Are there values greater than 2016 on the 'policy_creation_year'?: ",
       (df['policy_creation_year'] > 2016).any(),
       '\n')
 
-# Show the data frame sorted by 'policy_creation_year'
-df.sort_values(by='policy_creation_year', ascending=False).tail(3)
+# Count of values by year
+df.groupby('policy_creation_year')['customer_id'].count()
 
-# It's better to remove the row '9294'
-df = df.drop([9294])
+# It's better to remove the year with a not valid value
+df = df[df.policy_creation_year != 53784]
 
-print("3. Before dropping row 9294, are there values greater than 2016 on the 'policy_creation_year'?: ",
+print("3. Before data validation, are there values greater than 2016 on the 'policy_creation_year'?: ",
       (df['policy_creation_year'] > 2016).any(),
       '\n')
 
@@ -245,14 +255,17 @@ print("4. Are there values greater than 2016 on the 'birth_year'?: ",
       '\n')
 
 # Check for the older birth year:
-df.sort_values(by='birth_year', ascending=False).tail(3)
+# Count of values by year
+df.groupby('birth_year')['customer_id'].count()
 
+# It's better to remove the year with a not valid value
 # There's only one customer with a too old birth date, let's drop this row:
-df = df.drop([7195])    # Good bye Wolverine
+df = df[df.birth_year != 1028]   # Goodbye Wolverine
+
 
 # gross_monthly_salary: only positive values
 # Show the lowest salaries by sorting the data frame by this column
-df.sort_values(by='gross_monthly_salary', ascending=False).tail(3)
+df.gross_monthly_salary.sort_values(ascending=False).tail(3)
 
 # geographic_area: nothing to check because no further info is provided for these codes
 
@@ -263,23 +276,7 @@ else:
     print('5. Not all values from has_children column are binary values.',
           ' Additional check is neccesary.', '\n')
 
-# edu_code: should be an integer between 1 and 4
-if df['edu_code'].between(1, 4).sum() == len(df):
-    print('6. All values from edu_code column are between 1 and 4.', '\n')
-else:
-    print('6. Not all values from edu_code column are between 1 and 4.',
-          ' Additional check is neccesary.', '\n')
-
 # customer_monetary_value (CMV), nothing to verify
 # claims_rate, nothing to verify
 # all premiums, nothing to verify
 # all the other columns, (nothing to verify)
-
-# -------------- Additional comments (28 NOV 2019)
-# 1. How can we be sure of the possible relationships that can be done # between tables? not only guessing by their columns names
-# 2. Change the lob_db and engage_db names to lob_df and engage_df
-# 3. Is it a good idea to set customer_id as rows index?
-# 4. Split education_lvl column into 'edu_numb', 'edu_desc'.
-# 5. Should we compare that csv file contains exactly the same info?
-# 6. Should the column name 'growth_monthly_salary' change to 'gross_monthly_salary' according to the PDF file information ?
-# I did the change for comment 6.

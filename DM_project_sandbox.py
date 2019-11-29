@@ -1,7 +1,6 @@
 # Import packages
 import sqlite3
 import pandas as pd
-import os
 from datetime import date
 # -------------- Querying the database file
 
@@ -116,7 +115,6 @@ edu_values = combined_df.edu_desc.unique()
 
 # Concatenate back to the DataFrame
 combined_df = pd.concat([combined_df, edu_enc], axis=1)
-
 
 # Calculate how old is each customer's first policy
 # and create a new column named 'Cust_pol_age'

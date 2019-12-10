@@ -1,7 +1,9 @@
 # Import packages
 import sqlite3
 import pandas as pd
+import numpy as np
 from datetime import date
+import scipy.cluster.hierarchy as clust_hier
 from scipy.cluster.hierarchy import dendrogram, linkage
 from matplotlib import pyplot as plt
 from pandas.util.testing import assert_frame_equal
@@ -9,6 +11,8 @@ from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 import seaborn as sns
+from collections import defaultdict
+from matplotlib.colors import rgb2hex, colorConverter
 
 
 
@@ -102,7 +106,7 @@ except AssertionError as error:
 
 #Make customer Identity the index
 combined_df.set_index('Customer Identity', inplace=True)
-
+combined_df.columns
 
 #clear original dfs to clean the environment
 del lob_df, engage_df, excel_df, table_names
@@ -307,22 +311,26 @@ df['total_premiums'] = df['motor_premiums'] + \
 # Calculate 'Amount paid by the insurance company'
 df['amt_paidby_comp'] = df['claims_rate']*df['total_premiums']
 
-df.dtypes
-df.shape
-df.columns
 #We are now going to scale the data so we can do effective clusterign of our variables
-
 # Standardize the data to have a mean of ~0 and a variance of 1
 X_std = StandardScaler().fit_transform(df)
 
+# ## Experiment with alternative clustering techniques
+
+# variance zero cols must go
+corr = df.corr()  # Calculate the correlation of the above variables
+sns.set_style("whitegrid")
+sns.heatmap(corr) #Plot the correlation as heat map
+
+sns.set(font_scale=1.0)
+cmap = sns.diverging_palette(h_neg=210, h_pos=350, s=90, l=30, as_cmap=True)
+# clustermap
+sns.clustermap(data=corr, cmap="Blues", annot_kws={"size": 12})
 
 # ## Perform PCA
 # "First of all Principal Component Analysis is a good name. It does what it says on the tin. PCA finds the principal components of data. ...
 # They are the directions where there is the most variance, the directions where the data is most spread out."
 # guide: https://medium.com/@dmitriy.kavyazin/principal-component-analysis-and-k-means-clustering-to-visualize-a-high-dimensional-dataset-577b2a7a5fe2
-
-
-
 
 # Create a PCA instance: pca
 pca = PCA(n_components=6)
@@ -332,15 +340,18 @@ features = range(pca.n_components_)
 plt.bar(features, pca.explained_variance_ratio_, color='black')
 plt.xlabel('PCA features')
 plt.ylabel('variance %')
-plt.xticks(features)
+plt.show()
+plt.clf()
+
 # Save components to a DataFrame
 PCA_components = pd.DataFrame(principalComponents)
+#
+# # plot scatter plot of pca
+# plt.scatter(PCA_components[0], PCA_components[1], alpha=.1, color='black')
+# plt.xlabel('PCA 1')
+# plt.ylabel('PCA 2')
+# plt.show()
 
-
-# plot scatter plot of pca
-plt.scatter(PCA_components[0], PCA_components[1], alpha=.1, color='black')
-plt.xlabel('PCA 1')
-plt.ylabel('PCA 2')
 
 n_cols = 6
 
@@ -359,26 +370,26 @@ for k in ks:
 plt.plot(ks, inertias, '-o', color='black')
 plt.xlabel('number of clusters, k')
 plt.ylabel('inertia')
-plt.xticks(ks)
 plt.show()
+plt.clf()
 
-# ### we show a steep dropoff of inertia at k=6 so we can take k=6
-# ## Perform cluster analysis on PCA variables
+# # ### we show a steep dropoff of inertia at k=6 so we can take k=6
+# # ## Perform cluster analysis on PCA variables
+#
+# n_clusters = 6
+#
+# X = PCA_components.values
+# labels = KMeans(n_clusters, random_state=0).fit_predict(X)
+#
+# fig, ax = plt.subplots(figsize=(15, 15))
+# ax.scatter(X[:, 0], X[:, 1], c=labels,
+#            s=50, cmap='viridis');
+#
+# txts = df.index.values
+# for i, txt in enumerate(txts):
+#     ax.annotate(txt, (X[i, 0], X[i, 1]), fontsize=7)
 
-n_clusters = 6
-
-X = PCA_components.values
-labels = KMeans(n_clusters, random_state=0).fit_predict(X)
-
-fig, ax = plt.subplots(figsize=(15, 15))
-ax.scatter(X[:, 0], X[:, 1], c=labels,
-           s=50, cmap='viridis');
-
-txts = df.index.values
-for i, txt in enumerate(txts):
-    ax.annotate(txt, (X[i, 0], X[i, 1]), fontsize=7)
-
-# # Script to attempt to find good clusters for Data Objects in a datalake arrangement by the number of uses
+# # Script to attempt to find good clusters for Data Objects in a datalake arrangement
 # Uses both hierarchical dendrograms and K means with PCA to find good clusters
 
 #Hierarchical clustering
@@ -386,21 +397,21 @@ for i, txt in enumerate(txts):
 # https://docs.scipy.org/doc/scipy/reference/generated/scipy.cluster.hierarchy.linkage.html?highlight=linkage#scipy.cluster.hierarchy.linkage
 # https://www.analyticsvidhya.com/blog/2019/05/beginners-guide-hierarchical-clustering/
 # https://scikit-learn.org/stable/modules/clustering.html#hierarchical-clustering
+#https://docs.scipy.org/doc/scipy-0.14.0/reference/generated/scipy.cluster.hierarchy.dendrogram.html
 # Hierarchical clustering, does not require the user to specify the number of clusters.
 # Initially, each point is considered as a separate cluster, then it recursively clusters the points together depending upon the distance between them.
 # The points are clustered in such a way that the distance between points within a cluster is minimum and distance between the cluster is maximum.
 # Commonly used distance measures are Euclidean distance, Manhattan distance or Mahalanobis distance. Unlike k-means clustering, it is "bottom-up" approach.
 
-Z = linkage(PCA_components, 'ward')
-Z2 = linkage(PCA_components, 'single')
+Z = linkage(X_std, 'ward')
+Z2 = linkage(X_std, 'single')
 
 # Ward variance minimization algorithm
 
 method = "ward"
 fig = plt.figure(figsize=(30, 20))
 ax = fig.add_subplot(1, 1, 1)
-dendrogram(Z,labels=df.index)
-ax.tick_params(axis='x', which='major', labelsize=20)
+dendrogram(Z, ax=ax, labels=df.index, truncate_mode='lastp', color_threshold=4)
 ax.tick_params(axis='y', which='major', labelsize=20)
 ax.set_xlabel('Data Object')
 fig.savefig('{}_method_dendrogram.png'.format(method))
@@ -411,38 +422,30 @@ fig.savefig('{}_method_dendrogram.png'.format(method))
 method = 'single'
 fig = plt.figure(figsize=(30, 20))
 ax = fig.add_subplot(1, 1, 1)
-dendrogram(Z2, ax=ax, labels=df.index, p=0.5, truncate_mode=None, color_threshold=1.25)
+dendrogram(Z2, ax=ax, labels=df.index, truncate_mode='lastp', color_threshold=1.25)
 ax.tick_params(axis='x', which='major', labelsize=20)
 ax.tick_params(axis='y', which='major', labelsize=20)
 ax.set_xlabel('Data Object')
 fig.savefig('{}_method_dendrogram.png'.format(method))
 
 
-# ## Try several different clustering heuristics
-methods = ['ward', 'single', 'complete', 'average', 'weighted', 'centroid', 'median', ]
-fig = plt.figure(figsize=(30, 100))
-for n, method in enumerate(methods):
-    try:
-        Z = linkage(X_std, method, optimal_ordering=True)
+# # ## Try several different clustering heuristics
+# methods = ['ward', 'single', 'complete', 'average', 'weighted', 'centroid', 'median', ]
+# fig = plt.figure(figsize=(30, 100))
+# for n, method in enumerate(methods):
+#     try:
+#         Z = linkage(X_std, method, optimal_ordering=True)
+#         ax = fig.add_subplot(len(methods), 1, n + 1)
+#         dendrogram(Z, ax=ax, labels=df.index, truncate_mode='lastp', color_threshold=0.62 * max(Z[:, 2]))
+#         ax.tick_params(axis='x', which='major', labelsize=20)
+#         ax.tick_params(axis='y', which='major', labelsize=20)
+#         ax.set_xlabel(method)
+#         fig.savefig('{}_method_dendrogram.png'.format(method))
+#
+#     except Exception as e:
+#         print('Error caught:'.format(e))
+# plt.show()
 
-        ax = fig.add_subplot(len(methods), 1, n + 1)
-        dendrogram(Z, ax=ax, labels=df.index, p=4, truncate_mode=None, color_threshold=0.62 * max(Z[:, 2]))
-        ax.tick_params(axis='x', which='major', labelsize=20)
-        ax.tick_params(axis='y', which='major', labelsize=20)
-        ax.set_xlabel(method)
-        fig.savefig('{}_method_dendrogram.png'.format(method))
-
-    except Exception as e:
-        print('Error caught:'.format(e))
-plt.show()
 
 
-# ## Experiment with alternative clustering techniques
-
-# variance zero cols must go
-corr = df.T.corr()  # Calculate the correlation of the above variables
-# sns.heatmap(corr) #Plot the correlation as heat map
-sns.set(font_scale=1.0)
-cmap = sns.diverging_palette(h_neg=210, h_pos=350, s=90, l=30, as_cmap=True)
-sns.clustermap(data=corr, cmap="Blues", annot_kws={"size": 12})
 

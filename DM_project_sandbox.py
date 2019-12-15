@@ -64,7 +64,6 @@ Engage
 """
 
 # -------------- Exploring and cleaning the data
-
 # Load the data into dfs
 lob_df = pd.read_sql_query(query_lob, conn)
 engage_df = pd.read_sql_query(query_engage, conn)

@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 from datetime import date
 import scipy.cluster.hierarchy as clust_hier
+from scipy import stats
 from scipy.cluster.hierarchy import dendrogram, linkage
 from matplotlib import pyplot as plt
 from pandas.util.testing import assert_frame_equal
@@ -13,11 +14,9 @@ from sklearn.preprocessing import StandardScaler
 import seaborn as sns
 from collections import defaultdict
 from matplotlib.colors import rgb2hex, colorConverter
-
-
+from itertools import combinations
 
 # -------------- Querying the database file
-
 # set db path
 my_path = 'insurance.db'
 
@@ -78,9 +77,9 @@ print(engage_df.shape)
 lob_df.head()
 engage_df.head()
 
-#We import the excel data to check if it is the same as that we receive from the DB
+# We import the excel data to check if it is the same as that we receive from the DB
 path = "C:\\Users\\Leonor.furtado\\OneDrive - Accenture\\Uni\\Data Mining\\project\\"
-excel_df=pd.read_csv(path + "A2Z Insurance.csv")
+excel_df = pd.read_csv("A2Z Insurance.csv")
 
 # Left join the 2 tables on Customer Identity and reset the index
 combined_df = pd.merge(engage_df, lob_df, on='Customer Identity', how='left')
@@ -94,27 +93,27 @@ print(combined_df.describe(include='all'))
 # Drop 'index_x' and 'index_y' since they are not useful anymore
 combined_df.drop(['index_y', 'index_x'], axis=1, inplace=True)
 
-#Check if the data from the database data source is identical to that of the static csv file provided
+# Check if the data from the database data source is identical to that of the static csv file provided
 try:
-    if assert_frame_equal (excel_df,combined_df) is None:
-        print("The Dataframes are equal")
+    if assert_frame_equal(excel_df, combined_df) is None:
+        print("The Data frames are equal")
     else:
         print("Ups!")
 
 except AssertionError as error:
-    outcome = 'There are some differences in the Dataframes: {}'.format(error)
+    outcome = 'There are some differences in the Data frames: {}'.format(error)
 
-#Make customer Identity the index
+# Make customer Identity the index
 combined_df.set_index('Customer Identity', inplace=True)
 combined_df.columns
 
-#clear original dfs to clean the environment
+# Clear original dfs to clean the environment
 del lob_df, engage_df, excel_df, table_names
 
-#The data is the same so we proceed using the data coming from the database
+# The data is the same so we proceed using the data coming from the database
 
 # # Set simpler columns names to facilitate analysis
-combined_df.set_axis( ['policy_creation_year',
+combined_df.set_axis(['policy_creation_year',
                       'birth_year',
                       'education_lvl',
                       'gross_monthly_salary',
@@ -150,7 +149,7 @@ edu_values = combined_df.edu_desc.unique()
 combined_df = pd.concat([combined_df, edu_enc], axis=1)
 
 # Delete education_lvl columns, since its information is into the two new dummy columns
-combined_df = combined_df.drop(['education_lvl','edu_code','edu_desc'], axis=1)
+combined_df = combined_df.drop(['education_lvl', 'edu_code', 'edu_desc'], axis=1)
 
 # Checking for missing data using isnull() function & calculating the % of null values per column
 # Show the distribution of missing data per column
@@ -260,6 +259,63 @@ else:
 # all the other columns, (nothing to verify)
 
 
+# -------------- Detecting outliers
+# After logical validation, we check for outliers using different methods:
+# 1) Histograms
+def outliers_hist(df_in):
+    fig, axes = plt.subplots(len(df_in.columns)//3, 3, figsize=(20, 48))
+
+    i = 0
+    for triaxis in axes:
+        for axis in triaxis:
+            df_in.hist(column=df_in.columns[i], bins=100, ax=axis)
+            i = i+1
+
+# 2) Boxplots
+def outliers_boxplot(df_in):
+    fig, axes = plt.subplots(len(df_in.columns), 1, figsize=(20, 30))
+
+    i = 0
+    for my_box in axes:
+        sns.boxplot(data=df_in.iloc[:,i],
+                    orient='h',
+                    ax=my_box).set_title(df_in.columns[i])
+        i = i+1
+
+# Apply histogram function to the entire data frame
+outliers_hist(df)
+
+# After looking at the histograms, we can check further for outliers
+# just on the following attributes:
+check_list = ['gross_monthly_salary',
+                'customer_monetary_value',
+                'claims_rate',
+                'motor_premiums',
+                'household_premiums',
+                'health_premiums',
+                'life_premiums',
+                'work_premiums']
+
+df_check = df[df.columns.intersection(check_list)]
+
+# Now, let's identify outliers with Box Plot over normalized df_check
+# Standardize the data to have a mean of ~0 and a variance of 1
+
+df_norm = pd.DataFrame(StandardScaler().fit_transform(df_check))
+# Rename columns of normalized data frame
+df_norm.columns = check_list
+
+
+# Apply boc-plot function to the selected columns
+outliers_boxplot(df_norm)
+
+
+# References for detecting outliers:
+# https://www.dataquest.io/blog/tutorial-advanced-for-loops-python-pandas/
+# https://wellsr.com/python/python-create-pandas-boxplots-with-dataframes/
+# https://notebooks.ai/rmotr-curriculum/outlier-detection-using-boxplots-a89cd3ee
+# https://seaborn.pydata.org/examples/horizontal_boxplot.html
+
 # -------------- Caculating additional columns
 
 # With the additional information given,
@@ -311,19 +367,20 @@ df['total_premiums'] = df['motor_premiums'] + \
 # Calculate 'Amount paid by the insurance company'
 df['amt_paidby_comp'] = df['claims_rate']*df['total_premiums']
 
-#We are now going to scale the data so we can do effective clusterign of our variables
+# We are now going to scale the data so we can do effective clustering of our variables
 # Standardize the data to have a mean of ~0 and a variance of 1
 X_std = StandardScaler().fit_transform(df)
 
 # ## Experiment with alternative clustering techniques
 
 # variance zero cols must go
-corr = df.corr()  # Calculate the correlation of the above variables
+corr = df.corr()    # Calculate the correlation of the above variables
 sns.set_style("whitegrid")
-sns.heatmap(corr) #Plot the correlation as heat map
+sns.heatmap(corr)   # Plot the correlation as heat map
 
 sns.set(font_scale=1.0)
 cmap = sns.diverging_palette(h_neg=210, h_pos=350, s=90, l=30, as_cmap=True)
+
 # clustermap
 sns.clustermap(data=corr, cmap="Blues", annot_kws={"size": 12})
 
@@ -373,7 +430,7 @@ plt.ylabel('inertia')
 plt.show()
 plt.clf()
 
-# # ### we show a steep dropoff of inertia at k=6 so we can take k=6
+# # ### we show a steep drop off of inertia at k=6 so we can take k=6
 # # ## Perform cluster analysis on PCA variables
 #
 # n_clusters = 6
@@ -392,12 +449,12 @@ plt.clf()
 # # Script to attempt to find good clusters for Data Objects in a datalake arrangement
 # Uses both hierarchical dendrograms and K means with PCA to find good clusters
 
-#Hierarchical clustering
+# Hierarchical clustering
 # Try different methods for clustering, check documentation:
 # https://docs.scipy.org/doc/scipy/reference/generated/scipy.cluster.hierarchy.linkage.html?highlight=linkage#scipy.cluster.hierarchy.linkage
 # https://www.analyticsvidhya.com/blog/2019/05/beginners-guide-hierarchical-clustering/
 # https://scikit-learn.org/stable/modules/clustering.html#hierarchical-clustering
-#https://docs.scipy.org/doc/scipy-0.14.0/reference/generated/scipy.cluster.hierarchy.dendrogram.html
+# https://docs.scipy.org/doc/scipy-0.14.0/reference/generated/scipy.cluster.hierarchy.dendrogram.html
 # Hierarchical clustering, does not require the user to specify the number of clusters.
 # Initially, each point is considered as a separate cluster, then it recursively clusters the points together depending upon the distance between them.
 # The points are clustered in such a way that the distance between points within a cluster is minimum and distance between the cluster is maximum.

@@ -8,15 +8,21 @@ from scipy import stats
 from scipy.cluster.hierarchy import dendrogram, linkage
 from matplotlib import pyplot as plt
 from pandas.util.testing import assert_frame_equal
-from sklearn.cluster import KMeans
+from sklearn.cluster import KMeans, DBSCAN
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 import seaborn as sns
 from collections import defaultdict
 from matplotlib.colors import rgb2hex, colorConverter
 from itertools import combinations
+from sklearn.cluster import MeanShift, estimate_bandwidth
+
+
+
+
 
 # -------------- Querying the database file
+
 # set db path
 my_path = 'insurance.db'
 
@@ -77,9 +83,9 @@ print(engage_df.shape)
 lob_df.head()
 engage_df.head()
 
-# We import the excel data to check if it is the same as that we receive from the DB
+#We import the excel data to check if it is the same as that we receive from the DB
 path = "C:\\Users\\Leonor.furtado\\OneDrive - Accenture\\Uni\\Data Mining\\project\\"
-excel_df = pd.read_csv("A2Z Insurance.csv")
+excel_df=pd.read_csv(path + "A2Z Insurance.csv")
 
 # Left join the 2 tables on Customer Identity and reset the index
 combined_df = pd.merge(engage_df, lob_df, on='Customer Identity', how='left')
@@ -93,27 +99,27 @@ print(combined_df.describe(include='all'))
 # Drop 'index_x' and 'index_y' since they are not useful anymore
 combined_df.drop(['index_y', 'index_x'], axis=1, inplace=True)
 
-# Check if the data from the database data source is identical to that of the static csv file provided
+#Check if the data from the database data source is identical to that of the static csv file provided
 try:
-    if assert_frame_equal(excel_df, combined_df) is None:
-        print("The Data frames are equal")
+    if assert_frame_equal (excel_df,combined_df) is None:
+        print("The Dataframes are equal")
     else:
         print("Ups!")
 
 except AssertionError as error:
-    outcome = 'There are some differences in the Data frames: {}'.format(error)
+    outcome = 'There are some differences in the Dataframes: {}'.format(error)
 
-# Make customer Identity the index
+#Make customer Identity the index
 combined_df.set_index('Customer Identity', inplace=True)
 combined_df.columns
 
-# Clear original dfs to clean the environment
+#clear original dfs to clean the environment
 del lob_df, engage_df, excel_df, table_names
 
-# The data is the same so we proceed using the data coming from the database
+#The data is the same so we proceed using the data coming from the database
 
 # # Set simpler columns names to facilitate analysis
-combined_df.set_axis(['policy_creation_year',
+combined_df.set_axis( ['policy_creation_year',
                       'birth_year',
                       'education_lvl',
                       'gross_monthly_salary',
@@ -141,15 +147,10 @@ combined_df.dtypes
 combined_df[['edu_code', 'edu_desc']] = combined_df['education_lvl'].str.split(" - ", expand=True)
 
 # Create a one-hot encoded set of the type values for 'education_lvl'
-edu_enc = pd.get_dummies(combined_df['edu_desc'])
-edu_enc.head()
 edu_values = combined_df.edu_desc.unique()
 
-# Concatenate back to the DataFrame
-combined_df = pd.concat([combined_df, edu_enc], axis=1)
-
 # Delete education_lvl columns, since its information is into the two new dummy columns
-combined_df = combined_df.drop(['education_lvl', 'edu_code', 'edu_desc'], axis=1)
+combined_df = combined_df.drop(['education_lvl','edu_code','edu_desc'], axis=1)
 
 # Checking for missing data using isnull() function & calculating the % of null values per column
 # Show the distribution of missing data per column
@@ -175,8 +176,11 @@ print("Original data frame length:",
       "\nWhich is ", round(((len(combined_df) - len(combined_df.dropna(axis=0, how='any'))) / len(combined_df)) * 100, 2),
       "% of the orignal data.")
 
+
+# making new data frame 'null_values' with dropped NA values
+null_values = combined_df[combined_df.isna().any(axis=1)]
+
 # Drop rows with NA values
-# making new data frame 'df' with dropped NA values
 df = combined_df.dropna(axis=0, how='any')
 
 
@@ -194,10 +198,8 @@ type_dict = {
             'health_premiums' : float,
             'life_premiums' : float,
             'work_premiums' : float,
-            'BSc/MSc' : int,
-            'Basic' : int,
-            'High School' : int,
-            'PhD' : int}
+            'edu_code' : int
+}
 df.columns
 df = df.astype(type_dict)
 df.dtypes
@@ -258,6 +260,10 @@ else:
 # all premiums, nothing to verify
 # all the other columns, (nothing to verify)
 
+
+# --------------Outliers-----
+outlier=df.iloc[[172,9150,8867],:]
+df.drop([172,9150,8867], inplace=True)
 
 # -------------- Detecting outliers
 # After logical validation, we check for outliers using different methods:
@@ -342,11 +348,11 @@ df.head()
 # dropping the year columns as this information has now been captured in the age variables created
 df.drop(['policy_creation_year','birth_year'], axis=1, inplace=True)
 
-# Calculating and adding 'Customer annual profit' to the data frame
-df['cust_annual_prof'] = df['gross_monthly_salary']*12  # Please, let me know if 12 is OK, in Panama is 13
-
-# Calculating the acquisition cost:
-df['cust_acq_cost'] = df['cust_annual_prof']*df['cust_pol_age'] - df['customer_monetary_value']
+# # Calculating and adding 'Customer annual profit' to the data frame
+# df['cust_annual_prof'] = df['gross_monthly_salary']*12  # Please, let me know if 12 is OK, in Panama is 13
+#
+# # Calculating the acquisition cost:
+# df['cust_acq_cost'] = df['cust_annual_prof']*df['cust_pol_age'] - df['customer_monetary_value']
 
 # For 'claims_rate' (CR) it's possible to clear the 'Amount paid by the insurance company'
 # claims_rate = (Amount paid by the insurance company)/(Total Premiums)
@@ -369,18 +375,19 @@ df['amt_paidby_comp'] = df['claims_rate']*df['total_premiums']
 
 # We are now going to scale the data so we can do effective clustering of our variables
 # Standardize the data to have a mean of ~0 and a variance of 1
-X_std = StandardScaler().fit_transform(df)
+scaler = StandardScaler()
+X_std = scaler.fit_transform(df)
+X_std_df = pd.DataFrame(X_std, columns = df.columns)
 
 # ## Experiment with alternative clustering techniques
 
 # variance zero cols must go
-corr = df.corr()    # Calculate the correlation of the above variables
+corr = df.corr()  # Calculate the correlation of the above variables
 sns.set_style("whitegrid")
-sns.heatmap(corr)   # Plot the correlation as heat map
+sns.heatmap(corr) #Plot the correlation as heat map
 
 sns.set(font_scale=1.0)
 cmap = sns.diverging_palette(h_neg=210, h_pos=350, s=90, l=30, as_cmap=True)
-
 # clustermap
 sns.clustermap(data=corr, cmap="Blues", annot_kws={"size": 12})
 
@@ -430,7 +437,7 @@ plt.ylabel('inertia')
 plt.show()
 plt.clf()
 
-# # ### we show a steep drop off of inertia at k=6 so we can take k=6
+# # ### we show a steep dropoff of inertia at k=6 so we can take k=6
 # # ## Perform cluster analysis on PCA variables
 #
 # n_clusters = 6
@@ -449,19 +456,19 @@ plt.clf()
 # # Script to attempt to find good clusters for Data Objects in a datalake arrangement
 # Uses both hierarchical dendrograms and K means with PCA to find good clusters
 
-# Hierarchical clustering
+#Hierarchical clustering
 # Try different methods for clustering, check documentation:
 # https://docs.scipy.org/doc/scipy/reference/generated/scipy.cluster.hierarchy.linkage.html?highlight=linkage#scipy.cluster.hierarchy.linkage
 # https://www.analyticsvidhya.com/blog/2019/05/beginners-guide-hierarchical-clustering/
 # https://scikit-learn.org/stable/modules/clustering.html#hierarchical-clustering
-# https://docs.scipy.org/doc/scipy-0.14.0/reference/generated/scipy.cluster.hierarchy.dendrogram.html
+#https://docs.scipy.org/doc/scipy-0.14.0/reference/generated/scipy.cluster.hierarchy.dendrogram.html
 # Hierarchical clustering, does not require the user to specify the number of clusters.
 # Initially, each point is considered as a separate cluster, then it recursively clusters the points together depending upon the distance between them.
 # The points are clustered in such a way that the distance between points within a cluster is minimum and distance between the cluster is maximum.
 # Commonly used distance measures are Euclidean distance, Manhattan distance or Mahalanobis distance. Unlike k-means clustering, it is "bottom-up" approach.
 
 Z = linkage(X_std, 'ward')
-Z2 = linkage(X_std, 'single')
+Z2 = linkage(X_std, 'single',optimal_ordering=True)
 
 # Ward variance minimization algorithm
 
@@ -491,7 +498,7 @@ fig.savefig('{}_method_dendrogram.png'.format(method))
 # fig = plt.figure(figsize=(30, 100))
 # for n, method in enumerate(methods):
 #     try:
-#         Z = linkage(X_std, method, optimal_ordering=True)
+#         Z = linkage(X_std, method)
 #         ax = fig.add_subplot(len(methods), 1, n + 1)
 #         dendrogram(Z, ax=ax, labels=df.index, truncate_mode='lastp', color_threshold=0.62 * max(Z[:, 2]))
 #         ax.tick_params(axis='x', which='major', labelsize=20)
@@ -503,6 +510,157 @@ fig.savefig('{}_method_dendrogram.png'.format(method))
 #         print('Error caught:'.format(e))
 # plt.show()
 
+#DBSCAN
+
+db= DBSCAN( eps=1,min_samples=10).fit(X_std)
+
+labels=db.labels_
+
+n_clusters_= len(set(labels))-(1 if -1 in labels else 0)
+
+unique_clusters, count_clusters = np.unique(db.labels_, return_counts=True)
+
+#-1 is the noise
+print (np.asarray((unique_clusters, count_clusters)))
+
+#Visualising the clusters
+
+pca = PCA(n_components=2).fit(X_std)
+pca_2d = pca.transform(X_std)
+for i in range(0, pca_2d.shape[0]):
+    if db.labels_[i] == 0:
+        c1 = plt.scatter(pca_2d[i,0],pca_2d[i,1],c='r',marker='+')
+    elif db.labels_[i] == 1:
+        c2 = plt.scatter(pca_2d[i,0],pca_2d[i,1],c='g',marker='o')
+    elif db.labels_[i] == 2:
+        c4 = plt.scatter(pca_2d[i,0],pca_2d[i,1],c='k',marker='v')
+    elif db.labels_[i] == 3:
+        c5 = plt.scatter(pca_2d[i,0],pca_2d[i,1],c='y',marker='s')
+    elif db.labels_[i] == 4:
+        c6 = plt.scatter(pca_2d[i,0],pca_2d[i,1],c='m',marker='p')
+    elif db.labels_[i] == 5:
+        c7 = plt.scatter(pca_2d[i,0],pca_2d[i,1],c='c',marker='H')
+    elif db.labels_[i] == -1:
+        c3 = plt.scatter(pca_2d[i,0],pca_2d[i,1],c='b',marker='*')
+
+plt.legend([c1, c2,c4,c5,c6,c7,c3], ['Cluster 1', 'Cluster 2','Cluster 3','Cluster 4','Cluster 5','Cluster 5','Noise'])
+plt.title('DBSCAN finds 6 clusters and noise')
+plt.show()
 
 
 
+pca = PCA(n_components=3).fit(X_std)
+pca_3d = pca.transform(X_std)
+# Add my visuals
+my_color = []
+my_marker = []
+# Load my visuals
+for i in range(pca_3d.shape[0]):
+    if labels[i] == 0:
+        my_color.append('r')
+        my_marker.append('+')
+    elif labels[i] == 1:
+        my_color.append('b')
+        my_marker.append('o')
+    elif labels[i] == 2:
+        my_color.append('g')
+        my_marker.append('*')
+    elif labels[i] == -1:
+        my_color.append('k')
+        my_marker.append('<')
+
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+
+fig = plt.figure()
+ax = fig.add_subplot(111, projection='3d')
+
+for i in range(500):
+    # for i in range(pca_3d.shape[0]):
+    ax.scatter(pca_3d[i, 0], pca_3d[i, 1], pca_3d[i, 2], c=my_color[i], marker=my_marker[i])
+
+ax.set_xlabel('PCA 1')
+ax.set_ylabel('PCA 2')
+ax.set_zlabel('PCA 3')
+
+
+
+#mean shift
+to_MS = X_std
+# The following bandwidth can be automatically detected using
+my_bandwidth = estimate_bandwidth(to_MS,
+                               quantile=0.2,
+                               n_samples=1000)
+
+ms = MeanShift(bandwidth=my_bandwidth,
+               #bandwidth=0.15,
+               bin_seeding=True)
+
+ms.fit(to_MS)
+labels = ms.labels_
+cluster_centers = ms.cluster_centers_
+
+labels_unique = np.unique(labels)
+n_clusters_ = len(labels_unique)
+
+
+#Values
+scaler.inverse_transform(X=cluster_centers)
+
+#Count
+unique, counts = np.unique(labels, return_counts=True)
+
+print(np.asarray((unique, counts)).T)
+
+
+# lets check our are they distributed
+pca = PCA(n_components=2).fit(to_MS)
+pca_2d = pca.transform(to_MS)
+for i in range(0, pca_2d.shape[0]):
+    if labels[i] == 0:
+        c1 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='r', marker='+')
+    elif labels[i] == 1:
+        c2 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='g', marker='o')
+    elif labels[i] == 2:
+        c3 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='b', marker='*')
+
+plt.legend([c1, c2, c3], ['Cluster 1', 'Cluster 2', 'Cluster 3 '])
+plt.title('Mean Shift found 3 clusters')
+plt.show()
+
+# 3D
+pca = PCA(n_components=3).fit(to_MS)
+pca_3d = pca.transform(to_MS)
+# Add my visuals
+my_color = []
+my_marker = []
+# Load my visuals
+for i in range(pca_3d.shape[0]):
+    if labels[i] == 0:
+        my_color.append('r')
+        my_marker.append('+')
+    elif labels[i] == 1:
+        my_color.append('b')
+        my_marker.append('o')
+    elif labels[i] == 2:
+        my_color.append('g')
+        my_marker.append('*')
+    elif labels[i] == 3:
+        my_color.append('k')
+        my_marker.append('<')
+
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+
+fig = plt.figure()
+ax = fig.add_subplot(111, projection='3d')
+
+# for i in range(pca_3d.shape[0]):
+for i in range(250):
+    ax.scatter(pca_3d[i, 0],
+               pca_3d[i, 1],
+               pca_3d[i, 2], c=my_color[i], marker=my_marker[i])
+
+ax.set_xlabel('PCA 1')
+ax.set_ylabel('PCA 2')
+ax.set_zlabel('PCA 3')

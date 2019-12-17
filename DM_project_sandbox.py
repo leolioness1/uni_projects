@@ -16,10 +16,7 @@ from collections import defaultdict
 from matplotlib.colors import rgb2hex, colorConverter
 from itertools import combinations
 from sklearn.cluster import MeanShift, estimate_bandwidth
-
-
-
-
+from mpl_toolkits.mplot3d import Axes3D
 
 # -------------- Querying the database file
 
@@ -150,7 +147,7 @@ combined_df[['edu_code', 'edu_desc']] = combined_df['education_lvl'].str.split("
 edu_values = combined_df.edu_desc.unique()
 
 # Delete education_lvl columns, since its information is into the two new dummy columns
-combined_df = combined_df.drop(['education_lvl','edu_code','edu_desc'], axis=1)
+combined_df = combined_df.drop(['education_lvl','edu_desc'], axis=1)
 
 # Checking for missing data using isnull() function & calculating the % of null values per column
 # Show the distribution of missing data per column
@@ -221,6 +218,7 @@ print("2. Are there values greater than 2016 on the 'policy_creation_year'?: ",
 # Count of values by year
 df.groupby('policy_creation_year')['geographic_area'].count()
 
+
 # It's better to remove the year with a not valid value
 df = df[df.policy_creation_year != 53784]
 
@@ -255,6 +253,15 @@ else:
     print('5. Not all values from has_children column are binary values.',
           ' Additional check is neccesary.', '\n')
 
+
+# birth_year: should not exist values larger than policy year creation
+df["customer younger than policy"] = np.where(df['policy_creation_year'] < (df['birth_year']+18),1,0)
+print("6. Are there values greater than policy_creation _year on the 'birth_year'?: ",
+      sum(df["customer younger than policy"]))
+
+df= df[df["customer younger than policy"]==0]
+
+
 # customer_monetary_value (CMV), nothing to verify
 # claims_rate, nothing to verify
 # all premiums, nothing to verify
@@ -276,7 +283,7 @@ def outliers_hist(df_in):
         for axis in triaxis:
             df_in.hist(column=df_in.columns[i], bins=100, ax=axis)
             i = i+1
-
+    fig.savefig("outliers_hist.png")
 # 2) Boxplots
 def outliers_boxplot(df_in):
     fig, axes = plt.subplots(len(df_in.columns), 1, figsize=(20, 30))
@@ -287,9 +294,11 @@ def outliers_boxplot(df_in):
                     orient='h',
                     ax=my_box).set_title(df_in.columns[i])
         i = i+1
+    fig.savefig("outliers_boxplot.png")
 
 # Apply histogram function to the entire data frame
 outliers_hist(df)
+
 
 # After looking at the histograms, we can check further for outliers
 # just on the following attributes:
@@ -345,6 +354,8 @@ df['cust_pol_age'] = today_year - df['policy_creation_year']
 df['cust_age'] = today_year - df['birth_year']
 df.head()
 
+
+
 # dropping the year columns as this information has now been captured in the age variables created
 df.drop(['policy_creation_year','birth_year'], axis=1, inplace=True)
 
@@ -384,13 +395,13 @@ X_std_df = pd.DataFrame(X_std, columns = df.columns)
 # variance zero cols must go
 corr = df.corr()  # Calculate the correlation of the above variables
 sns.set_style("whitegrid")
-sns.heatmap(corr) #Plot the correlation as heat map
+# sns.heatmap(corr) #Plot the correlation as heat map
 
 sns.set(font_scale=1.0)
 cmap = sns.diverging_palette(h_neg=210, h_pos=350, s=90, l=30, as_cmap=True)
 # clustermap
-sns.clustermap(data=corr, cmap="Blues", annot_kws={"size": 12})
-
+clustermap = sns.clustermap(data=corr, cmap="coolwarm", annot_kws={"size": 12})
+clustermap.savefig('corr_clustermap.png')
 # ## Perform PCA
 # "First of all Principal Component Analysis is a good name. It does what it says on the tin. PCA finds the principal components of data. ...
 # They are the directions where there is the most variance, the directions where the data is most spread out."
@@ -415,8 +426,6 @@ PCA_components = pd.DataFrame(principalComponents)
 # plt.xlabel('PCA 1')
 # plt.ylabel('PCA 2')
 # plt.show()
-
-
 n_cols = 6
 
 ks = range(1, 10)
@@ -491,7 +500,7 @@ ax.tick_params(axis='x', which='major', labelsize=20)
 ax.tick_params(axis='y', which='major', labelsize=20)
 ax.set_xlabel('Data Object')
 fig.savefig('{}_method_dendrogram.png'.format(method))
-
+fig.clf()
 
 # # ## Try several different clustering heuristics
 # methods = ['ward', 'single', 'complete', 'average', 'weighted', 'centroid', 'median', ]
@@ -546,7 +555,7 @@ for i in range(0, pca_2d.shape[0]):
 plt.legend([c1, c2,c4,c5,c6,c7,c3], ['Cluster 1', 'Cluster 2','Cluster 3','Cluster 4','Cluster 5','Cluster 5','Noise'])
 plt.title('DBSCAN finds 6 clusters and noise')
 plt.show()
-
+#plt.clf()
 
 
 pca = PCA(n_components=3).fit(X_std)
@@ -569,8 +578,6 @@ for i in range(pca_3d.shape[0]):
         my_color.append('k')
         my_marker.append('<')
 
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
 
 fig = plt.figure()
 ax = fig.add_subplot(111, projection='3d')
@@ -614,7 +621,7 @@ print(np.asarray((unique, counts)).T)
 
 
 # lets check our are they distributed
-pca = PCA(n_components=2).fit(to_MS)
+pca = PCA(n_components=3).fit(to_MS)
 pca_2d = pca.transform(to_MS)
 for i in range(0, pca_2d.shape[0]):
     if labels[i] == 0:
@@ -627,6 +634,7 @@ for i in range(0, pca_2d.shape[0]):
 plt.legend([c1, c2, c3], ['Cluster 1', 'Cluster 2', 'Cluster 3 '])
 plt.title('Mean Shift found 3 clusters')
 plt.show()
+plt.clf()
 
 # 3D
 pca = PCA(n_components=3).fit(to_MS)
@@ -649,8 +657,6 @@ for i in range(pca_3d.shape[0]):
         my_color.append('k')
         my_marker.append('<')
 
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
 
 fig = plt.figure()
 ax = fig.add_subplot(111, projection='3d')

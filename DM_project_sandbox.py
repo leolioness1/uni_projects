@@ -18,6 +18,75 @@ from itertools import combinations
 from sklearn.cluster import MeanShift, estimate_bandwidth
 from mpl_toolkits.mplot3d import Axes3D
 
+# This is a summary of the labs sessions topics we’ve covered
+# Just to put checkmarks on the techniques we are using in this project:
+
+# Session 1: query a database (sqlite3)
+# Session 2: query and join tables (sqlite3)
+# Session 3: explore data (describe, shape, info, unique, dtypes, sum, mean, head, tail, groupby, columns, iloc)
+# Session 4: continuation of session 3
+
+# Session 5 (Impute):
+#	from sklearn.impute import SimpleImputer
+# 	from sklearn.neighbors import KNeighborsClassifier
+#	from sklearn.neighbors import KNeighborsRegressor
+
+# Session 5 (Programming): Clustering
+#	minMax	(scale, normalization)
+#	from scipy.spatial.distance import Euclidean
+
+# Session 6 (Normalizing and PCA):
+#	from sklearn.preprocessing import MinMaxScaler
+#	from sklearn.preprocessing import StandardScaler
+#	from sklearn.decomposition import PCA
+
+# Session 7 (): correlation matrix, encoding:
+#	from sklearn.preprocessing import OneHotEncoder
+#	from sklearn import preprocessing
+#	le_status = preprocessing.LabelEncoder()
+
+# Session 8 (Encoding):
+# (transforming categorical to numerical) the status values of each customer
+#	from sklearn import preprocessing
+#	le_status = preprocessing.LabelEncoder()
+
+# Session 9 (Kmeans, Silhouttes):
+#	elbow_plot function
+#	silhouette
+#	Kmeans
+
+# Session 10 (Hier. Clustering, K-modes):
+#	from scipy.cluster.hierarchy import dendrogram, linkage
+#	from scipy.cluster import hierarchy
+#	from pylab import rcParams
+#	from sklearn.cluster import AgglomerativeClustering
+#	import sklearn.metrics as sm
+# 	from kmodes.kmodes import KModes
+
+# Session 11 (Classification tree):
+#	from sklearn.model_selection import cross_val_score
+#	from sklearn import tree
+#	from sklearn.tree import DecisionTreeClassifier, plot_tree
+#	from sklearn.model_selection import train_test_split # Import train_test_split function
+#	from sklearn import metrics #Import scikit-learn metrics module for accuracy calculation
+#	from dtreeplt import dtreeplt
+#	import graphviz
+
+# Session 12 (Self Organizing Map):
+#	from sompy.visualization.mapview import View2DPacked
+#	from sompy.visualization.mapview import View2D
+#	from sompy.visualization.bmuhits import BmuHitsView
+#	from sompy.visualization.hitmap import HitMapView
+
+# Session 13 (DB Scan & Mean Shift):
+#	from sklearn.cluster import DBSCAN
+#	from sklearn import metrics
+#	from sklearn.cluster import MeanShift, estimate_bandwidth
+
+# Session 14 (GaussianMixture):
+#	from sklearn import mixture
+
+
 # -------------- Querying the database file
 
 # set db path
@@ -79,9 +148,10 @@ print(engage_df.shape)
 lob_df.head()
 engage_df.head()
 
-#We import the excel data to check if it is the same as that we receive from the DB
-path = "C:\\Users\\Leonor.furtado\\OneDrive - Accenture\\Uni\\Data Mining\\project\\"
-excel_df=pd.read_csv(path + "A2Z Insurance.csv")
+# We import the excel data to check if it is the same as that we receive from the DB
+path1 = "C:\\Users\\Leonor.furtado\\OneDrive - Accenture\\Uni\\Data Mining\\project\\"
+path2 = ""
+excel_df = pd.read_csv("A2Z Insurance.csv")
 
 # Left join the 2 tables on Customer Identity and reset the index
 combined_df = pd.merge(engage_df, lob_df, on='Customer Identity', how='left')
@@ -95,9 +165,9 @@ print(combined_df.describe(include='all'))
 # Drop 'index_x' and 'index_y' since they are not useful anymore
 combined_df.drop(['index_y', 'index_x'], axis=1, inplace=True)
 
-#Check if the data from the database data source is identical to that of the static csv file provided
+# Check if the data from the database data source is identical to that of the static csv file provided
 try:
-    if assert_frame_equal (excel_df,combined_df) is None:
+    if assert_frame_equal(excel_df, combined_df) is None:
         print("The Dataframes are equal")
     else:
         print("Ups!")
@@ -105,17 +175,17 @@ try:
 except AssertionError as error:
     outcome = 'There are some differences in the Dataframes: {}'.format(error)
 
-#Make customer Identity the index
+# Make customer Identity the index
 combined_df.set_index('Customer Identity', inplace=True)
 combined_df.columns
 
-#clear original dfs to clean the environment
+# clear original dfs to clean the environment
 del lob_df, engage_df, excel_df, table_names
 
-#The data is the same so we proceed using the data coming from the database
+# The data is the same so we proceed using the data coming from the database
 
 # # Set simpler columns names to facilitate analysis
-combined_df.set_axis( ['policy_creation_year',
+combined_df.set_axis(['policy_creation_year',
                       'birth_year',
                       'education_lvl',
                       'gross_monthly_salary',
@@ -146,17 +216,17 @@ combined_df[['edu_code', 'edu_desc']] = combined_df['education_lvl'].str.split("
 edu_values = combined_df.edu_desc.unique()
 
 # Delete education_lvl columns, since its information is into the two new dummy columns
-combined_df = combined_df.drop(['education_lvl','edu_desc'], axis=1)
+combined_df = combined_df.drop(['education_lvl', 'edu_desc'], axis=1)
 
 # Checking for missing data using isnull() function & calculating the % of null values per column
 # Show the distribution of missing data per column
-print('This is the missing data distribution per column (%):\n', round((combined_df.isnull().sum() / len(combined_df))*100, 2))
-
+print('This is the missing data distribution per column (%):\n',
+      round((combined_df.isnull().sum() / len(combined_df)) * 100, 2))
 
 # Show the percentage of all rows with missing data, no matter which column
 print('The sum of percentage of missing data for all rows is: ',
-      round((combined_df.isnull().sum() / len(combined_df)).sum()*100, 2), '% \n',
-     'which are ', combined_df.isnull().sum().sum(), 'rows of the total ', len(combined_df), 'rows')
+      round((combined_df.isnull().sum() / len(combined_df)).sum() * 100, 2), '% \n',
+      'which are ', combined_df.isnull().sum().sum(), 'rows of the total ', len(combined_df), 'rows')
 
 # Assuming there are no more than 1 missing value per row,
 # The number of rows with null values is below 3%,
@@ -169,9 +239,9 @@ print("Original data frame length:",
       len(combined_df.dropna(axis=0, how='any')),
       "\nNumber of rows with at least 1 NA value: ",
       (len(combined_df) - len(combined_df.dropna(axis=0, how='any'))),
-      "\nWhich is ", round(((len(combined_df) - len(combined_df.dropna(axis=0, how='any'))) / len(combined_df)) * 100, 2),
+      "\nWhich is ",
+      round(((len(combined_df) - len(combined_df.dropna(axis=0, how='any'))) / len(combined_df)) * 100, 2),
       "% of the orignal data.")
-
 
 # making new data frame 'null_values' with dropped NA values
 null_values = combined_df[combined_df.isna().any(axis=1)]
@@ -179,22 +249,21 @@ null_values = combined_df[combined_df.isna().any(axis=1)]
 # Drop rows with NA values
 df = combined_df.dropna(axis=0, how='any')
 
-
 # Defining each column type value with a  dictionary
 type_dict = {
-            'policy_creation_year' : int,
-            'birth_year' : int,
-            'gross_monthly_salary' : float,
-            'geographic_area' : int,
-            'has_children' : int,
-            'customer_monetary_value' : float,
-            'claims_rate' : float,
-            'motor_premiums' : float,
-            'household_premiums' : float,
-            'health_premiums' : float,
-            'life_premiums' : float,
-            'work_premiums' : float,
-            'edu_code' : int
+    'policy_creation_year': int,
+    'birth_year': int,
+    'gross_monthly_salary': float,
+    'geographic_area': int,
+    'has_children': int,
+    'customer_monetary_value': float,
+    'claims_rate': float,
+    'motor_premiums': float,
+    'household_premiums': float,
+    'health_premiums': float,
+    'life_premiums': float,
+    'work_premiums': float,
+    'edu_code': int
 }
 df.columns
 df = df.astype(type_dict)
@@ -217,7 +286,6 @@ print("2. Are there values greater than 2016 on the 'policy_creation_year'?: ",
 # Count of values by year
 df.groupby('policy_creation_year')['geographic_area'].count()
 
-
 # It's better to remove the year with a not valid value
 df = df[df.policy_creation_year != 53784]
 
@@ -236,8 +304,7 @@ df.groupby('birth_year')['geographic_area'].count()
 
 # It's better to remove the year with a not valid value
 # There's only one customer with a too old birth date, let's drop this row:
-df = df[df.birth_year != 1028]   # Goodbye Wolverine
-
+df = df[df.birth_year != 1028]  # Goodbye Wolverine
 
 # gross_monthly_salary: only positive values
 # Show the lowest salaries by sorting the data frame by this column
@@ -252,14 +319,12 @@ else:
     print('5. Not all values from has_children column are binary values.',
           ' Additional check is neccesary.', '\n')
 
-
 # birth_year: should not exist values larger than policy year creation
-df["customer younger than policy"] = np.where(df['policy_creation_year'] < (df['birth_year']+18),1,0)
+df["customer younger than policy"] = np.where(df['policy_creation_year'] < (df['birth_year'] + 18), 1, 0)
 print("6. Are there values greater than policy_creation _year on the 'birth_year'?: ",
       sum(df["customer younger than policy"]))
 
-df= df[df["customer younger than policy"]==0]
-
+df = df[df["customer younger than policy"] == 0]
 
 # customer_monetary_value (CMV), nothing to verify
 # claims_rate, nothing to verify
@@ -268,47 +333,50 @@ df= df[df["customer younger than policy"]==0]
 
 
 # --------------Outliers-----
-outlier=df.iloc[[172,9150,8867],:]
-df.drop([172,9150,8867], inplace=True)
+outlier = df.iloc[[172, 9150, 8867], :]
+df.drop([172, 9150, 8867], inplace=True)
+
 
 # -------------- Detecting outliers
 # After logical validation, we check for outliers using different methods:
 # 1) Histograms
 def outliers_hist(df_in):
-    fig, axes = plt.subplots(len(df_in.columns)//3, 3, figsize=(20, 48))
+    fig, axes = plt.subplots(len(df_in.columns) // 3, 3, figsize=(20, 48))
 
     i = 0
     for triaxis in axes:
         for axis in triaxis:
             df_in.hist(column=df_in.columns[i], bins=100, ax=axis)
-            i = i+1
+            i = i + 1
     fig.savefig("outliers_hist.png")
+
+
 # 2) Boxplots
 def outliers_boxplot(df_in):
     fig, axes = plt.subplots(len(df_in.columns), 1, figsize=(20, 30))
 
     i = 0
     for my_box in axes:
-        sns.boxplot(data=df_in.iloc[:,i],
+        sns.boxplot(data=df_in.iloc[:, i],
                     orient='h',
                     ax=my_box).set_title(df_in.columns[i])
-        i = i+1
+        i = i + 1
     fig.savefig("outliers_boxplot.png")
+
 
 # Apply histogram function to the entire data frame
 outliers_hist(df)
 
-
 # After looking at the histograms, we can check further for outliers
 # just on the following attributes:
 check_list = ['gross_monthly_salary',
-                'customer_monetary_value',
-                'claims_rate',
-                'motor_premiums',
-                'household_premiums',
-                'health_premiums',
-                'life_premiums',
-                'work_premiums']
+              'customer_monetary_value',
+              'claims_rate',
+              'motor_premiums',
+              'household_premiums',
+              'health_premiums',
+              'life_premiums',
+              'work_premiums']
 
 df_check = df[df.columns.intersection(check_list)]
 
@@ -319,10 +387,8 @@ df_norm = pd.DataFrame(StandardScaler().fit_transform(df_check))
 # Rename columns of normalized data frame
 df_norm.columns = check_list
 
-
 # Apply boc-plot function to the selected columns
 outliers_boxplot(df_norm)
-
 
 # References for detecting outliers:
 # https://www.dataquest.io/blog/tutorial-advanced-for-loops-python-pandas/
@@ -330,6 +396,35 @@ outliers_boxplot(df_norm)
 # https://notebooks.ai/rmotr-curriculum/outlier-detection-using-boxplots-a89cd3ee
 # https://seaborn.pydata.org/examples/horizontal_boxplot.html
 
+# -------------- Plotting correlation matrix and correlogram
+# Compute the correlation matrix
+corr = df.corr()
+
+# Generate a mask for the upper triangle
+mask = np.zeros_like(corr, dtype=np.bool)
+mask[np.triu_indices_from(mask)] = True
+
+# Set up the matplotlib figure
+f, ax = plt.subplots(figsize=(11, 9))
+
+# Generate a custom diverging colormap
+cmap = sns.diverging_palette(220, 10, as_cmap=True)
+
+# Draw the heatmap with the mask and correct aspect ratio
+sns.heatmap(corr, mask=mask, cmap=cmap, vmax=.3, center=0,
+            square=True, linewidths=.5, cbar_kws={"shrink": .5})
+
+# Correlogram with regression
+sns.pairplot(df, kind="reg")
+plt.show()
+
+# Correlogram without regression
+sns.pairplot(df, kind="scatter")
+plt.show()
+
+# References for plotting correlation matrix on seaborn:
+# https://seaborn.pydata.org/examples/many_pairwise_correlations.html
+# https://python-graph-gallery.com/111-custom-correlogram/
 # -------------- Caculating additional columns
 
 # With the additional information given,
@@ -353,10 +448,8 @@ df['cust_pol_age'] = today_year - df['policy_creation_year']
 df['cust_age'] = today_year - df['birth_year']
 df.head()
 
-
-
 # dropping the year columns as this information has now been captured in the age variables created
-df.drop(['policy_creation_year','birth_year'], axis=1, inplace=True)
+df.drop(['policy_creation_year', 'birth_year'], axis=1, inplace=True)
 
 # # Calculating and adding 'Customer annual profit' to the data frame
 # df['cust_annual_prof'] = df['gross_monthly_salary']*12  # Please, let me know if 12 is OK, in Panama is 13
@@ -375,19 +468,19 @@ df.drop(['policy_creation_year','birth_year'], axis=1, inplace=True)
 
 # Calculating and adding 'total_premiums' to the data frame
 df['total_premiums'] = df['motor_premiums'] + \
-                        df['household_premiums'] + \
-                        df['health_premiums'] + \
-                        df['life_premiums'] + \
-                        df['work_premiums']
+                       df['household_premiums'] + \
+                       df['health_premiums'] + \
+                       df['life_premiums'] + \
+                       df['work_premiums']
 
 # Calculate 'Amount paid by the insurance company'
-df['amt_paidby_comp'] = df['claims_rate']*df['total_premiums']
+df['amt_paidby_comp'] = df['claims_rate'] * df['total_premiums']
 
 # We are now going to scale the data so we can do effective clustering of our variables
 # Standardize the data to have a mean of ~0 and a variance of 1
 scaler = StandardScaler()
 X_std = scaler.fit_transform(df)
-X_std_df = pd.DataFrame(X_std, columns = df.columns)
+X_std_df = pd.DataFrame(X_std, columns=df.columns)
 
 # ## Experiment with alternative clustering techniques
 
@@ -464,19 +557,19 @@ plt.clf()
 # # Script to attempt to find good clusters for Data Objects in a datalake arrangement
 # Uses both hierarchical dendrograms and K means with PCA to find good clusters
 
-#Hierarchical clustering
+# Hierarchical clustering
 # Try different methods for clustering, check documentation:
 # https://docs.scipy.org/doc/scipy/reference/generated/scipy.cluster.hierarchy.linkage.html?highlight=linkage#scipy.cluster.hierarchy.linkage
 # https://www.analyticsvidhya.com/blog/2019/05/beginners-guide-hierarchical-clustering/
 # https://scikit-learn.org/stable/modules/clustering.html#hierarchical-clustering
-#https://docs.scipy.org/doc/scipy-0.14.0/reference/generated/scipy.cluster.hierarchy.dendrogram.html
+# https://docs.scipy.org/doc/scipy-0.14.0/reference/generated/scipy.cluster.hierarchy.dendrogram.html
 # Hierarchical clustering, does not require the user to specify the number of clusters.
 # Initially, each point is considered as a separate cluster, then it recursively clusters the points together depending upon the distance between them.
 # The points are clustered in such a way that the distance between points within a cluster is minimum and distance between the cluster is maximum.
 # Commonly used distance measures are Euclidean distance, Manhattan distance or Mahalanobis distance. Unlike k-means clustering, it is "bottom-up" approach.
 
 Z = linkage(X_std, 'ward')
-Z2 = linkage(X_std, 'single',optimal_ordering=True)
+Z2 = linkage(X_std, 'single', optimal_ordering=True)
 
 # Ward variance minimization algorithm
 
@@ -487,7 +580,6 @@ dendrogram(Z, ax=ax, labels=df.index, truncate_mode='lastp', color_threshold=4)
 ax.tick_params(axis='y', which='major', labelsize=20)
 ax.set_xlabel('Data Object')
 fig.savefig('{}_method_dendrogram.png'.format(method))
-
 
 # ## Nearest Point Algorithm
 
@@ -518,43 +610,44 @@ fig.clf()
 #         print('Error caught:'.format(e))
 # plt.show()
 
-#DBSCAN
+# DBSCAN
 
-db= DBSCAN( eps=1,min_samples=10).fit(X_std)
+db = DBSCAN(eps=1, min_samples=10).fit(X_std)
 
-labels=db.labels_
+labels = db.labels_
 
-n_clusters_= len(set(labels))-(1 if -1 in labels else 0)
+n_clusters_ = len(set(labels)) - (1 if -1 in labels else 0)
 
 unique_clusters, count_clusters = np.unique(db.labels_, return_counts=True)
 
-#-1 is the noise
-print (np.asarray((unique_clusters, count_clusters)))
+# -1 is the noise
+print(np.asarray((unique_clusters, count_clusters)))
 
-#Visualising the clusters
+# Visualising the clusters
 
 pca = PCA(n_components=2).fit(X_std)
 pca_2d = pca.transform(X_std)
 for i in range(0, pca_2d.shape[0]):
     if db.labels_[i] == 0:
-        c1 = plt.scatter(pca_2d[i,0],pca_2d[i,1],c='r',marker='+')
+        c1 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='r', marker='+')
     elif db.labels_[i] == 1:
-        c2 = plt.scatter(pca_2d[i,0],pca_2d[i,1],c='g',marker='o')
+        c2 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='g', marker='o')
     elif db.labels_[i] == 2:
-        c4 = plt.scatter(pca_2d[i,0],pca_2d[i,1],c='k',marker='v')
+        c4 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='k', marker='v')
     elif db.labels_[i] == 3:
-        c5 = plt.scatter(pca_2d[i,0],pca_2d[i,1],c='y',marker='s')
+        c5 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='y', marker='s')
     elif db.labels_[i] == 4:
-        c6 = plt.scatter(pca_2d[i,0],pca_2d[i,1],c='m',marker='p')
+        c6 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='m', marker='p')
     elif db.labels_[i] == 5:
-        c7 = plt.scatter(pca_2d[i,0],pca_2d[i,1],c='c',marker='H')
+        c7 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='c', marker='H')
     elif db.labels_[i] == -1:
-        c3 = plt.scatter(pca_2d[i,0],pca_2d[i,1],c='b',marker='*')
+        c3 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='b', marker='*')
 
-plt.legend([c1, c2,c4,c5,c6,c7,c3], ['Cluster 1', 'Cluster 2','Cluster 3','Cluster 4','Cluster 5','Cluster 5','Noise'])
+plt.legend([c1, c2, c4, c5, c6, c7, c3],
+           ['Cluster 1', 'Cluster 2', 'Cluster 3', 'Cluster 4', 'Cluster 5', 'Cluster 5', 'Noise'])
 plt.title('DBSCAN finds 6 clusters and noise')
 plt.show()
-#plt.clf()
+# plt.clf()
 
 
 pca = PCA(n_components=3).fit(X_std)
@@ -577,7 +670,6 @@ for i in range(pca_3d.shape[0]):
         my_color.append('k')
         my_marker.append('<')
 
-
 fig = plt.figure()
 ax = fig.add_subplot(111, projection='3d')
 
@@ -589,17 +681,15 @@ ax.set_xlabel('PCA 1')
 ax.set_ylabel('PCA 2')
 ax.set_zlabel('PCA 3')
 
-
-
-#mean shift
+# mean shift
 to_MS = X_std
 # The following bandwidth can be automatically detected using
 my_bandwidth = estimate_bandwidth(to_MS,
-                               quantile=0.2,
-                               n_samples=1000)
+                                  quantile=0.2,
+                                  n_samples=1000)
 
 ms = MeanShift(bandwidth=my_bandwidth,
-               #bandwidth=0.15,
+               # bandwidth=0.15,
                bin_seeding=True)
 
 ms.fit(to_MS)
@@ -609,15 +699,13 @@ cluster_centers = ms.cluster_centers_
 labels_unique = np.unique(labels)
 n_clusters_ = len(labels_unique)
 
-
-#Values
+# Values
 scaler.inverse_transform(X=cluster_centers)
 
-#Count
+# Count
 unique, counts = np.unique(labels, return_counts=True)
 
 print(np.asarray((unique, counts)).T)
-
 
 # lets check our are they distributed
 pca = PCA(n_components=3).fit(to_MS)
@@ -655,7 +743,6 @@ for i in range(pca_3d.shape[0]):
     elif labels[i] == 3:
         my_color.append('k')
         my_marker.append('<')
-
 
 fig = plt.figure()
 ax = fig.add_subplot(111, projection='3d')

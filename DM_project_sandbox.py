@@ -17,6 +17,7 @@ from matplotlib.colors import rgb2hex, colorConverter
 from itertools import combinations
 from sklearn.cluster import MeanShift, estimate_bandwidth
 from mpl_toolkits.mplot3d import Axes3D
+import os
 
 # This is a summary of the labs sessions topics we’ve covered
 # Just to put checkmarks on the techniques we are using in this project:
@@ -136,6 +137,7 @@ Engage
 """
 
 # -------------- Exploring and cleaning the data
+
 # Load the data into dfs
 lob_df = pd.read_sql_query(query_lob, conn)
 engage_df = pd.read_sql_query(query_engage, conn)
@@ -148,10 +150,8 @@ print(engage_df.shape)
 lob_df.head()
 engage_df.head()
 
-# We import the excel data to check if it is the same as that we receive from the DB
-path1 = "C:\\Users\\Leonor.furtado\\OneDrive - Accenture\\Uni\\Data Mining\\project\\"
-path2 = ""
-excel_df = pd.read_csv("A2Z Insurance.csv")
+#We import the excel data to check if it is the same as that we receive from the DB
+excel_df=pd.read_csv(os.path.join(os.getcwd(),"A2Z Insurance.csv"))
 
 # Left join the 2 tables on Customer Identity and reset the index
 combined_df = pd.merge(engage_df, lob_df, on='Customer Identity', how='left')
@@ -216,7 +216,7 @@ combined_df[['edu_code', 'edu_desc']] = combined_df['education_lvl'].str.split("
 edu_values = combined_df.edu_desc.unique()
 
 # Delete education_lvl columns, since its information is into the two new dummy columns
-combined_df = combined_df.drop(['education_lvl', 'edu_desc'], axis=1)
+combined_df = combined_df.drop(['education_lvl', 'edu_code'], axis=1)
 
 # Checking for missing data using isnull() function & calculating the % of null values per column
 # Show the distribution of missing data per column
@@ -244,7 +244,7 @@ print("Original data frame length:",
       "% of the orignal data.")
 
 # making new data frame 'null_values' with dropped NA values
-null_values = combined_df[combined_df.isna().any(axis=1)]
+null_df= combined_df[combined_df.isna().any(axis=1)]
 
 # Drop rows with NA values
 df = combined_df.dropna(axis=0, how='any')
@@ -254,7 +254,7 @@ type_dict = {
     'policy_creation_year': int,
     'birth_year': int,
     'gross_monthly_salary': float,
-    'geographic_area': int,
+    'geographic_area': str,
     'has_children': int,
     'customer_monetary_value': float,
     'claims_rate': float,
@@ -263,7 +263,7 @@ type_dict = {
     'health_premiums': float,
     'life_premiums': float,
     'work_premiums': float,
-    'edu_code': int
+    'edu_desc': str
 }
 df.columns
 df = df.astype(type_dict)
@@ -306,6 +306,7 @@ df.groupby('birth_year')['geographic_area'].count()
 # There's only one customer with a too old birth date, let's drop this row:
 df = df[df.birth_year != 1028]  # Goodbye Wolverine
 
+
 # gross_monthly_salary: only positive values
 # Show the lowest salaries by sorting the data frame by this column
 df.gross_monthly_salary.sort_values(ascending=False).tail(3)
@@ -319,12 +320,16 @@ else:
     print('5. Not all values from has_children column are binary values.',
           ' Additional check is neccesary.', '\n')
 
-# birth_year: should not exist values larger than policy year creation
-df["customer younger than policy"] = np.where(df['policy_creation_year'] < (df['birth_year'] + 18), 1, 0)
-print("6. Are there values greater than policy_creation _year on the 'birth_year'?: ",
-      sum(df["customer younger than policy"]))
+#we decide to map the binary variable to a string variable to treat is as a categorical variable
+df['has_children'] = df['has_children'].map({1:'Yes', 0: 'No'})
 
-df = df[df["customer younger than policy"] == 0]
+
+# birth_year: should not exist values larger than policy year creation
+print("6. Are there values greater than policy_creation _year on the 'birth_year'?: ",
+      sum(np.where(df['policy_creation_year'] < (df['birth_year'] + 18), 1, 0)))
+
+#due to the high levels of inconsistent data in the birth year column we decide to drop this column as the data in it cannot be trusted
+df.drop('birth_year',axis=1, inplace=True)
 
 # customer_monetary_value (CMV), nothing to verify
 # claims_rate, nothing to verify
@@ -332,11 +337,14 @@ df = df[df["customer younger than policy"] == 0]
 # all the other columns, (nothing to verify)
 
 
-# --------------Outliers-----
-outlier = df.iloc[[172, 9150, 8867], :]
-df.drop([172, 9150, 8867], inplace=True)
+# Categorical boolean mask
+categorical_feature_mask = df.dtypes == object
+# filter categorical columns using mask and turn it into a list
+categorical_cols = df.columns[categorical_feature_mask].tolist()
 
+df_cat = df.loc[:, categorical_cols]
 
+df.drop(categorical_cols,axis=1, inplace=True)
 # -------------- Detecting outliers
 # After logical validation, we check for outliers using different methods:
 # 1) Histograms
@@ -351,80 +359,9 @@ def outliers_hist(df_in):
     fig.savefig("outliers_hist.png")
 
 
-# 2) Boxplots
-def outliers_boxplot(df_in):
-    fig, axes = plt.subplots(len(df_in.columns), 1, figsize=(20, 30))
-
-    i = 0
-    for my_box in axes:
-        sns.boxplot(data=df_in.iloc[:, i],
-                    orient='h',
-                    ax=my_box).set_title(df_in.columns[i])
-        i = i + 1
-    fig.savefig("outliers_boxplot.png")
-
-
 # Apply histogram function to the entire data frame
 outliers_hist(df)
 
-# After looking at the histograms, we can check further for outliers
-# just on the following attributes:
-check_list = ['gross_monthly_salary',
-              'customer_monetary_value',
-              'claims_rate',
-              'motor_premiums',
-              'household_premiums',
-              'health_premiums',
-              'life_premiums',
-              'work_premiums']
-
-df_check = df[df.columns.intersection(check_list)]
-
-# Now, let's identify outliers with Box Plot over normalized df_check
-# Standardize the data to have a mean of ~0 and a variance of 1
-
-df_norm = pd.DataFrame(StandardScaler().fit_transform(df_check))
-# Rename columns of normalized data frame
-df_norm.columns = check_list
-
-# Apply boc-plot function to the selected columns
-outliers_boxplot(df_norm)
-
-# References for detecting outliers:
-# https://www.dataquest.io/blog/tutorial-advanced-for-loops-python-pandas/
-# https://wellsr.com/python/python-create-pandas-boxplots-with-dataframes/
-# https://notebooks.ai/rmotr-curriculum/outlier-detection-using-boxplots-a89cd3ee
-# https://seaborn.pydata.org/examples/horizontal_boxplot.html
-
-# -------------- Plotting correlation matrix and correlogram
-# Compute the correlation matrix
-corr = df.corr()
-
-# Generate a mask for the upper triangle
-mask = np.zeros_like(corr, dtype=np.bool)
-mask[np.triu_indices_from(mask)] = True
-
-# Set up the matplotlib figure
-f, ax = plt.subplots(figsize=(11, 9))
-
-# Generate a custom diverging colormap
-cmap = sns.diverging_palette(220, 10, as_cmap=True)
-
-# Draw the heatmap with the mask and correct aspect ratio
-sns.heatmap(corr, mask=mask, cmap=cmap, vmax=.3, center=0,
-            square=True, linewidths=.5, cbar_kws={"shrink": .5})
-
-# Correlogram with regression
-sns.pairplot(df, kind="reg")
-plt.show()
-
-# Correlogram without regression
-sns.pairplot(df, kind="scatter")
-plt.show()
-
-# References for plotting correlation matrix on seaborn:
-# https://seaborn.pydata.org/examples/many_pairwise_correlations.html
-# https://python-graph-gallery.com/111-custom-correlogram/
 # -------------- Caculating additional columns
 
 # With the additional information given,
@@ -444,27 +381,11 @@ plt.show()
 today_year = int(date.today().year)
 df['cust_pol_age'] = today_year - df['policy_creation_year']
 
-# Do the same with 'birth_year column' to get the customers' ages
-df['cust_age'] = today_year - df['birth_year']
-df.head()
+#we decided to no loger generate customer age after discovering a big chunk of the data is unreliable
 
-# dropping the year columns as this information has now been captured in the age variables created
-df.drop(['policy_creation_year', 'birth_year'], axis=1, inplace=True)
+# dropping the year column as this information has now been captured in the age variable created
+df.drop(['policy_creation_year'], axis=1, inplace=True)
 
-# # Calculating and adding 'Customer annual profit' to the data frame
-# df['cust_annual_prof'] = df['gross_monthly_salary']*12  # Please, let me know if 12 is OK, in Panama is 13
-#
-# # Calculating the acquisition cost:
-# df['cust_acq_cost'] = df['cust_annual_prof']*df['cust_pol_age'] - df['customer_monetary_value']
-
-# For 'claims_rate' (CR) it's possible to clear the 'Amount paid by the insurance company'
-# claims_rate = (Amount paid by the insurance company)/(Total Premiums)
-# Therefore:
-# (Amount paid by the insurance company) = (claims_rate)*(Total Premiums)
-
-# where: (Total Premiums) can be calculated prior, as the sum of:
-# 'motor_premiums', 'household_premiums', 'health_premiums',
-# 'life_premiums', 'work_premiums'
 
 # Calculating and adding 'total_premiums' to the data frame
 df['total_premiums'] = df['motor_premiums'] + \
@@ -473,8 +394,25 @@ df['total_premiums'] = df['motor_premiums'] + \
                        df['life_premiums'] + \
                        df['work_premiums']
 
+# Calculating the acquisition cost:
+df['cust_acq_cost'] = df['total_premiums']*df['cust_pol_age'] - df['customer_monetary_value']
+#
+# For 'claims_rate' (CR) it's possible to clear the 'Amount paid by the insurance company'
+# claims_rate = (Amount paid by the insurance company)/(Total Premiums)
+# Therefore:
+# (Amount paid by the insurance company) = (claims_rate)*(Total Premiums)
+#
+# where: (Total Premiums) can be calculated prior, as the sum of:
+# 'motor_premiums', 'household_premiums', 'health_premiums',
+# 'life_premiums', 'work_premiums'
+
 # Calculate 'Amount paid by the insurance company'
-df['amt_paidby_comp'] = df['claims_rate'] * df['total_premiums']
+df['amt_paidby_comp_2yrs'] = df['claims_rate'] * df['total_premiums']
+
+#Calculate the premium/wage proportion
+
+df['premium_wage_ratio'] = df['total_premiums']/(df['gross_monthly_salary']*12)
+
 
 # We are now going to scale the data so we can do effective clustering of our variables
 # Standardize the data to have a mean of ~0 and a variance of 1
@@ -482,10 +420,78 @@ scaler = StandardScaler()
 X_std = scaler.fit_transform(df)
 X_std_df = pd.DataFrame(X_std, columns=df.columns)
 
-# ## Experiment with alternative clustering techniques
+# --------------Outliers-----
 
+# Define the lower and upper quartiles boundaries for plotting the boxplots
+# and for dropping values. Numbers between (0,1) and qtl1 < qtl2
+
+qtl_1 = 0.1  # lower boundary
+qtl_2 = 0.9  # upper boundary
+
+
+def df_boxplot(df_in, qtl_1, qtl_2):
+    """
+    qtl_1 is the lower quantile use to plot the boxplots. Number between (0,1)
+    qtl_2 is the upper quantile use to plot the boxplots. Number between (0,1)
+    """
+    sns.set(style="whitegrid")
+    fig, ax = plt.subplots(figsize=(15, 15))
+    ax = sns.boxplot(data=df_in, orient="h", palette="Set2", whis=[qtl_1, qtl_2])
+    plt.show()
+
+# Define quartiles for plotting the boxplots and dropping rows
+def IQR_drop_outliers(df_in, qtl_1, qtl_2):
+    '''
+    qtl_1 is the lower quantile use to drop the rows. Number between (0, 1)
+    qtl_2 is the upper quantile use to drop the rows. Number between (0, 1)
+    '''
+    Q1 = df_in.quantile(qtl_1)
+    Q3 = df_in.quantile(qtl_2)
+    IQR = Q3 - Q1
+    lower_range = Q1 - (1.5 * IQR)
+    upper_range = Q3 + (1.5 * IQR)
+
+    # df_out is filtered with values within the quartiles boundaries
+    df_out = df_in[~((df_in < lower_range) | (df_in > upper_range)).any(axis=1)]
+    df_outliers = df_in[((df_in < lower_range) | (df_in > upper_range)).any(axis=1)]
+    return df_out, df_outliers
+
+
+# Reference:
+# https://medium.com/@prashant.nair2050/hands-on-outlier-detection-and-treatment-in-python-using-1-5-iqr-rule-f9ff1961a414
+
+# Apply box-plot function to the selected columns
+df_boxplot(X_std_df, qtl_1, qtl_2)
+
+# There are outliers, so let's remove them with the 'IQR_drop_outliers' function
+df,df_outliers = IQR_drop_outliers(df, qtl_1, qtl_2)
+
+# We are now going to scale the data so we can do effective clustering of our variables
+# Standardize the data to have a mean of ~0 and a variance of 1
+scaler = StandardScaler()
+X_std = scaler.fit_transform(df)
+X_std_df = pd.DataFrame(X_std, columns=df.columns)
+
+# Plot without outliers
+df_boxplot(X_std_df, qtl_1, qtl_2)
+
+# References for detecting outliers:
+# https://www.dataquest.io/blog/tutorial-advanced-for-loops-python-pandas/
+# https://wellsr.com/python/python-create-pandas-boxplots-with-dataframes/
+# https://notebooks.ai/rmotr-curriculum/outlier-detection-using-boxplots-a89cd3ee
+# https://seaborn.pydata.org/examples/horizontal_boxplot.html
+
+
+
+# Correlogram without regression
+sns.reset_defaults()
+sns.pairplot(X_std_df.iloc[:,:8], diag_kind="kde", markers="+")
+plt.show()
+
+
+# ## Experiment with alternative clustering techniques
 # variance zero cols must go
-corr = df.corr()  # Calculate the correlation of the above variables
+corr = X_std_df.corr()  # Calculate the correlation of the above variables
 sns.set_style("whitegrid")
 # sns.heatmap(corr) #Plot the correlation as heat map
 
@@ -494,6 +500,8 @@ cmap = sns.diverging_palette(h_neg=210, h_pos=350, s=90, l=30, as_cmap=True)
 # clustermap
 clustermap = sns.clustermap(data=corr, cmap="coolwarm", annot_kws={"size": 12})
 clustermap.savefig('corr_clustermap.png')
+
+sns.pairplot(data=corr, size = 2)
 # ## Perform PCA
 # "First of all Principal Component Analysis is a good name. It does what it says on the tin. PCA finds the principal components of data. ...
 # They are the directions where there is the most variance, the directions where the data is most spread out."
@@ -756,3 +764,78 @@ for i in range(250):
 ax.set_xlabel('PCA 1')
 ax.set_ylabel('PCA 2')
 ax.set_zlabel('PCA 3')
+
+#finding best initialisation method
+def compare_init_methods(data,list_init_methods,K_n):
+    """
+    This function returns a plot comparing the range of initialisation methods cluster plots with 4 runs.
+    data: original data DataFrame
+    list_init_methods: list of initialisation methods for the Scipy learn kmeans2 method.
+    K_n: integer representing the number of clusters i.e. value of k in the kmeans funtion
+    """
+    keys=[]
+    centroids_list=[]
+    labels_list=[]
+    for i in range(1,5):
+        fig, axs = plt.subplots(len(list_init_methods), 2, sharex=True, sharey=True, gridspec_kw={'hspace': 0})
+        fig.suptitle('Initialization Method Comparision nr {}'.format(i))
+
+        for index, init_method in enumerate(list_init_methods):
+            centroids, labels = kmeans2(data, k=K_n,minit=init_method)
+            keys.append("{}:{}".format(i,init_method))
+            centroids_list.append(centroids)
+            labels_list.append(labels)
+            axs[index, 0].plot(data[labels == 0, 0], data[labels == 0, 1], 'ob',
+                 data[labels == 1, 0], data[labels == 1, 1], 'or',
+                 data[labels == 2, 0], data[labels == 2, 1], 'oy')
+            axs[index, 0].plot(centroids[:, 0], centroids[:, 1], 'sg', markersize=5)
+
+
+            axs[index, 1].plot(data[labels == 0, 2], data[labels == 0, 3], 'ob',
+                 data[labels == 1, 2], data[labels == 1, 3], 'or',
+                 data[labels == 2, 2], data[labels == 2, 3], 'oy')
+            axs[index, 1].plot(centroids[:, 2], centroids[:, 3], 'sg', markersize=5)
+            axs[index, 0].set_title("Method:{}".format(init_method), y=0.7)
+    return keys, centroids_list, labels_list
+
+
+def kneigh_fillna(df, X, y):
+    """
+    This function returns a dataframe with filled na values using KNeighbours.
+    df: original data DataFrame
+    X: list of the static columns names to be used to predict na values.
+    y: string corresponding to the name of the value to fill na values
+    """
+    # select the other variables to be used in the regressor for prediction and fill in their missing values with respective averages
+    # (avg fillna applied because kmeans regressor doesn't work with variables that have missing values)
+    tempavg = df.drop(columns=y).fillna(df.drop(columns=y).mean())
+    # filter on columns of interest
+    reg = pd.concat([tempavg, df[y]], axis=1)
+
+    # splitting the reg dataframe to incomplete table
+    # contains the rows of each Nan value of variable to be predicted in reg df
+    incomplete = df[reg[y].isna()]
+
+    # splitting the reg dataframe to complete table
+    # contains the rows of each valid value of the variable to be predicted in reg df
+    complete = df[~reg.index.isin(incomplete.index)]
+
+    # setting the kNeighbours regressor using euclidean distances
+    regressor = KNeighborsRegressor(10, weights='distance', metric='euclidean')
+
+    # fitting the regressor to the dataframe using the complete df filling empty values in the dependant variable with the mean
+    fitting = regressor.fit(reg[~reg.index.isin(incomplete.index)].loc[:, X], complete.loc[:, [y]])
+
+    # predicting the values using the incomplete df filling empty values in the dependant variable with the mean
+    incomplete[y] = fitting.predict(reg[reg[y].isna()].loc[:, X])
+
+    # applying concatenate to the original df
+    df = pd.concat([complete, incomplete], axis=0)
+
+    # reset the index
+    df.reset_index(drop=True, inplace=True)
+
+    # return the original df with filled values
+    return df
+
+

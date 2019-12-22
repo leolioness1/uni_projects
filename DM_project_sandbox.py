@@ -19,75 +19,6 @@ from sklearn.cluster import MeanShift, estimate_bandwidth
 from mpl_toolkits.mplot3d import Axes3D
 import os
 
-# This is a summary of the labs sessions topics we’ve covered
-# Just to put checkmarks on the techniques we are using in this project:
-
-# Session 1: query a database (sqlite3)
-# Session 2: query and join tables (sqlite3)
-# Session 3: explore data (describe, shape, info, unique, dtypes, sum, mean, head, tail, groupby, columns, iloc)
-# Session 4: continuation of session 3
-
-# Session 5 (Impute):
-#	from sklearn.impute import SimpleImputer
-# 	from sklearn.neighbors import KNeighborsClassifier
-#	from sklearn.neighbors import KNeighborsRegressor
-
-# Session 5 (Programming): Clustering
-#	minMax	(scale, normalization)
-#	from scipy.spatial.distance import Euclidean
-
-# Session 6 (Normalizing and PCA):
-#	from sklearn.preprocessing import MinMaxScaler
-#	from sklearn.preprocessing import StandardScaler
-#	from sklearn.decomposition import PCA
-
-# Session 7 (): correlation matrix, encoding:
-#	from sklearn.preprocessing import OneHotEncoder
-#	from sklearn import preprocessing
-#	le_status = preprocessing.LabelEncoder()
-
-# Session 8 (Encoding):
-# (transforming categorical to numerical) the status values of each customer
-#	from sklearn import preprocessing
-#	le_status = preprocessing.LabelEncoder()
-
-# Session 9 (Kmeans, Silhouttes):
-#	elbow_plot function
-#	silhouette
-#	Kmeans
-
-# Session 10 (Hier. Clustering, K-modes):
-#	from scipy.cluster.hierarchy import dendrogram, linkage
-#	from scipy.cluster import hierarchy
-#	from pylab import rcParams
-#	from sklearn.cluster import AgglomerativeClustering
-#	import sklearn.metrics as sm
-# 	from kmodes.kmodes import KModes
-
-# Session 11 (Classification tree):
-#	from sklearn.model_selection import cross_val_score
-#	from sklearn import tree
-#	from sklearn.tree import DecisionTreeClassifier, plot_tree
-#	from sklearn.model_selection import train_test_split # Import train_test_split function
-#	from sklearn import metrics #Import scikit-learn metrics module for accuracy calculation
-#	from dtreeplt import dtreeplt
-#	import graphviz
-
-# Session 12 (Self Organizing Map):
-#	from sompy.visualization.mapview import View2DPacked
-#	from sompy.visualization.mapview import View2D
-#	from sompy.visualization.bmuhits import BmuHitsView
-#	from sompy.visualization.hitmap import HitMapView
-
-# Session 13 (DB Scan & Mean Shift):
-#	from sklearn.cluster import DBSCAN
-#	from sklearn import metrics
-#	from sklearn.cluster import MeanShift, estimate_bandwidth
-
-# Session 14 (GaussianMixture):
-#	from sklearn import mixture
-
-
 # -------------- Querying the database file
 
 # set db path
@@ -328,14 +259,13 @@ df['has_children'] = df['has_children'].map({1:'Yes', 0: 'No'})
 print("6. Are there values greater than policy_creation _year on the 'birth_year'?: ",
       sum(np.where(df['policy_creation_year'] < (df['birth_year'] + 18), 1, 0)))
 
-#due to the high levels of inconsistent data in the birth year column we decide to drop this column as the data in it cannot be trusted
-df.drop('birth_year',axis=1, inplace=True)
+# due to the high levels of inconsistent data in the birth year column we decide to drop this column as the data in it cannot be trusted
+df.drop('birth_year', axis=1, inplace=True)
 
 # customer_monetary_value (CMV), nothing to verify
 # claims_rate, nothing to verify
 # all premiums, nothing to verify
 # all the other columns, (nothing to verify)
-
 
 # Categorical boolean mask
 categorical_feature_mask = df.dtypes == object
@@ -344,11 +274,12 @@ categorical_cols = df.columns[categorical_feature_mask].tolist()
 
 df_cat = df.loc[:, categorical_cols]
 
-df.drop(categorical_cols,axis=1, inplace=True)
+df.drop(categorical_cols, axis=1, inplace=True)
+
 # -------------- Detecting outliers
 # After logical validation, we check for outliers using different methods:
 # 1) Histograms
-def outliers_hist(df_in):
+def hist_all_columns(df_in):
     fig, axes = plt.subplots(len(df_in.columns) // 3, 3, figsize=(20, 48))
 
     i = 0
@@ -360,9 +291,9 @@ def outliers_hist(df_in):
 
 
 # Apply histogram function to the entire data frame
-outliers_hist(df)
+# hist_all_columns(df)
 
-# -------------- Caculating additional columns
+# -------------- Calculating additional columns
 
 # With the additional information given,
 # it's possible to obtain extra valuable information.
@@ -424,12 +355,10 @@ X_std_df = pd.DataFrame(X_std, columns=df.columns)
 
 # Define the lower and upper quartiles boundaries for plotting the boxplots
 # and for dropping values. Numbers between (0,1) and qtl1 < qtl2
+qtl_1 = 0.05  # lower boundary
+qtl_2 = 0.95  # upper boundary
 
-qtl_1 = 0.1  # lower boundary
-qtl_2 = 0.9  # upper boundary
-
-
-def df_boxplot(df_in, qtl_1, qtl_2):
+def boxplot_all_columns(df_in, qtl_1, qtl_2):
     """
     qtl_1 is the lower quantile use to plot the boxplots. Number between (0,1)
     qtl_2 is the upper quantile use to plot the boxplots. Number between (0,1)
@@ -461,10 +390,10 @@ def IQR_drop_outliers(df_in, qtl_1, qtl_2):
 # https://medium.com/@prashant.nair2050/hands-on-outlier-detection-and-treatment-in-python-using-1-5-iqr-rule-f9ff1961a414
 
 # Apply box-plot function to the selected columns
-df_boxplot(X_std_df, qtl_1, qtl_2)
+boxplot_all_columns(X_std_df, qtl_1, qtl_2)
 
 # There are outliers, so let's remove them with the 'IQR_drop_outliers' function
-df,df_outliers = IQR_drop_outliers(df, qtl_1, qtl_2)
+df, df_outliers = IQR_drop_outliers(df, qtl_1, qtl_2)
 
 # We are now going to scale the data so we can do effective clustering of our variables
 # Standardize the data to have a mean of ~0 and a variance of 1
@@ -473,20 +402,81 @@ X_std = scaler.fit_transform(df)
 X_std_df = pd.DataFrame(X_std, columns=df.columns)
 
 # Plot without outliers
-df_boxplot(X_std_df, qtl_1, qtl_2)
+boxplot_all_columns(X_std_df, qtl_1, qtl_2)
 
-# References for detecting outliers:
-# https://www.dataquest.io/blog/tutorial-advanced-for-loops-python-pandas/
-# https://wellsr.com/python/python-create-pandas-boxplots-with-dataframes/
-# https://notebooks.ai/rmotr-curriculum/outlier-detection-using-boxplots-a89cd3ee
-# https://seaborn.pydata.org/examples/horizontal_boxplot.html
+# -------------- Plotting correlation matrix
+# # Compute the correlation matrix
+# corr = df.corr()
+#
+# # Generate a mask for the upper triangle
+# mask = np.zeros_like(corr, dtype=np.bool)
+# mask[np.triu_indices_from(mask)] = True
+#
+# # Set up the matplotlib figure
+# f, ax = plt.subplots(figsize=(11, 9))
+#
+# # Generate a custom diverging colormap
+# cmap = sns.diverging_palette(220, 10, as_cmap=True)
+#
+# # Draw the heatmap with the mask and correct aspect ratio
+# sns.heatmap(corr, mask=mask, cmap=cmap, vmax=.3, center=0,
+#             square=True, linewidths=.5, cbar_kws={"shrink": .5})
+
+# # -------------- Plotting pairplots
+# # Pair-plot without regression
+# sns.reset_defaults()
+# sns.pairplot(X_std_df.iloc[:, :8], diag_kind="kde", markers="+")
+# plt.show()
+
+# Doing individual scatter plots to find trends in customers and classify them
+
+# Get columns names
+X_std_df.columns
+
+# Set seaborn palette colors
+flatui = ["#9b59b6", "#3498db", "#95a5a6", "#e74c3c", "#34495e", "#2ecc71"]
+
+# Pair-plot just for products and customers salaries
+salary_premiums = X_std_df[['gross_monthly_salary',
+                            'total_premiums',
+                            'motor_premiums',
+                            'work_premiums',
+                            'health_premiums',
+                            'life_premiums',
+                            'household_premiums']]
+with sns.color_palette('Paired'):
+    sns.pairplot(data=salary_premiums,
+                 y_vars=['total_premiums',
+                         'motor_premiums',
+                         'work_premiums',
+                         'health_premiums',
+                         'life_premiums',
+                         'household_premiums'],
+                 x_vars=['gross_monthly_salary'],
+                 markers='x')
+    plt.show()
+
+# Pair-plot just for products and claims rate
+claims_premiums = X_std_df[['claims_rate',
+                            'total_premiums',
+                            'motor_premiums',
+                            'work_premiums',
+                            'health_premiums',
+                            'life_premiums',
+                            'household_premiums']]
+with sns.color_palette(flatui):
+    sns.pairplot(data=claims_premiums,
+                 y_vars=['total_premiums',
+                         'motor_premiums',
+                         'work_premiums',
+                         'health_premiums',
+                         'life_premiums',
+                         'household_premiums'],
+                 x_vars=['claims_rate'],
+                 markers='x')
+    plt.show()
 
 
-
-# Correlogram without regression
-sns.reset_defaults()
-sns.pairplot(X_std_df.iloc[:,:8], diag_kind="kde", markers="+")
-plt.show()
 
 
 # ## Experiment with alternative clustering techniques
@@ -576,8 +566,8 @@ plt.clf()
 # The points are clustered in such a way that the distance between points within a cluster is minimum and distance between the cluster is maximum.
 # Commonly used distance measures are Euclidean distance, Manhattan distance or Mahalanobis distance. Unlike k-means clustering, it is "bottom-up" approach.
 
-Z = linkage(X_std, 'ward')
-Z2 = linkage(X_std, 'single', optimal_ordering=True)
+Z = linkage(salary_premiums[['gross_monthly_salary', 'total_premiums']], 'ward')
+Z2 = linkage(salary_premiums[['gross_monthly_salary', 'total_premiums']], 'single', optimal_ordering=True)
 
 # Ward variance minimization algorithm
 
@@ -837,5 +827,3 @@ def kneigh_fillna(df, X, y):
 
     # return the original df with filled values
     return df
-
-

@@ -1,23 +1,20 @@
 # Import packages
+import os
 import sqlite3
-import pandas as pd
-import numpy as np
 from datetime import date
-import scipy.cluster.hierarchy as clust_hier
-from scipy import stats
-from scipy.cluster.hierarchy import dendrogram, linkage
+
+import numpy as np
+import pandas as pd
+import seaborn as sns
 from matplotlib import pyplot as plt
 from pandas.util.testing import assert_frame_equal
+from scipy.cluster.hierarchy import dendrogram, linkage
 from sklearn.cluster import KMeans, DBSCAN
+from sklearn.cluster import MeanShift, estimate_bandwidth
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
-import seaborn as sns
-from collections import defaultdict
-from matplotlib.colors import rgb2hex, colorConverter
-from itertools import combinations
-from sklearn.cluster import MeanShift, estimate_bandwidth
-from mpl_toolkits.mplot3d import Axes3D
-import os
+from sklearn import preprocessing
+from kmodes.kmodes import KModes
 
 # -------------- Querying the database file
 
@@ -259,7 +256,40 @@ df['has_children'] = df['has_children'].map({1:'Yes', 0: 'No'})
 print("6. Are there values greater than policy_creation _year on the 'birth_year'?: ",
       sum(np.where(df['policy_creation_year'] < (df['birth_year'] + 18), 1, 0)))
 
-# due to the high levels of inconsistent data in the birth year column we decide to drop this column as the data in it cannot be trusted
+# -------------- Plotting correlation matrix to check if birthday_year can be
+# associated to another variable due to their high correlation
+# # Compute the correlation matrix
+corr = df.corr()
+
+# Set Up Mask To Hide Upper Triangle
+
+mask = np.zeros_like(corr, dtype=np.bool)
+mask[np.triu_indices_from(mask)] = True
+np.triu_indices_from(mask)
+mask[np.triu_indices_from(mask)] = True
+
+fig, ax = plt.subplots(figsize=(11, 15))
+heatmap = sns.heatmap(corr,
+                      mask=mask,
+                      square=True,
+                      linewidths=0.5,
+                      cmap='coolwarm',
+                      cbar_kws={'shrink': 0.4,
+                                'ticks': [-1, -.5, 0, 0.5, 1]},
+                      vmin=-1,
+                      vmax=1,
+                      annot=True,
+                      annot_kws={'size': 12})
+#add the column names as labels
+ax.set_yticklabels(corr.columns, rotation=0)
+ax.set_xticklabels(corr.columns)
+sns.set_style({'xtick.bottom': True}, {'ytick.left': True})
+fig.savefig("corr_matrix.png")
+
+# The correlation matrix shows a correlation between salary and birth year
+# So let's drop birth_year column, but keep in mind that people with high salary might be older do to the correlation
+
+# Due to the high levels of inconsistent data in the birth year column we decide to drop this column as the data in it cannot be trusted
 df.drop('birth_year', axis=1, inplace=True)
 
 # customer_monetary_value (CMV), nothing to verify
@@ -312,7 +342,7 @@ def hist_all_columns(df_in):
 today_year = int(date.today().year)
 df['cust_pol_age'] = today_year - df['policy_creation_year']
 
-#we decided to no loger generate customer age after discovering a big chunk of the data is unreliable
+# we decided to no longer generate customer age after discovering a big chunk of the data is unreliable
 
 # dropping the year column as this information has now been captured in the age variable created
 df.drop(['policy_creation_year'], axis=1, inplace=True)
@@ -343,6 +373,92 @@ df['amt_paidby_comp_2yrs'] = df['claims_rate'] * df['total_premiums']
 #Calculate the premium/wage proportion
 
 df['premium_wage_ratio'] = df['total_premiums']/(df['gross_monthly_salary']*12)
+
+
+# --------------K-modes-----
+# separate df into engage and consume
+df_Engage = df_cat.join(df['gross_monthly_salary'], how='inner')
+df_Engage.dtypes
+
+# Plotting 'gross_monthly_salary' before converting to categorical
+# just to see the range and determine the bins
+plt.figure()
+sns.distplot(df_Engage['gross_monthly_salary'])
+plt.savefig('salary_histogram.png')
+
+# Oh! There are a few people with a really high salary
+# The bin will be 1000 (1k), and the salaries above 6k will be considered outliers.
+# The rows that contains those individuals will be store into this data frame:
+salary_outliers = df_Engage[df_Engage['gross_monthly_salary'] > 6000]
+# Check the shape of this data frame
+salary_outliers.head()   # Ja! just 2 guys above $6k. Messi and CR7
+
+df_Engage = df_Engage[df_Engage['gross_monthly_salary'] <= 6000]
+df_Engage.shape         # 9985 individuals below $6k
+
+# Converting gross_monthly_salary into categorical variable, using bins
+df_Engage['salary_bin'] = pd.cut(df_Engage['gross_monthly_salary'],
+                                 [0, 1000, 2000, 3000, 4000, 5000, 6000],
+                                 labels=['0-1k', '1k-2k', '2k-3k', '3k-4k', '4k-5k', '5k-6k'])
+
+# Drop 'gross_monthly_salary', since the goal is to perform K-modes
+df_Engage = df_Engage.drop('gross_monthly_salary', axis=1)
+
+# Take a look at the new df_Engage full categorical
+df_Engage.head()
+df_Engage.columns
+df_Engage.dtypes
+df_Engage['salary_bin'] = df_Engage['salary_bin'].astype(str)
+df_Engage.dtypes
+
+## ------ DM lab code for K-modes
+kmodes_clustering = KModes(n_clusters=8, init='random', n_init=50, verbose=1)
+clusters_cat = kmodes_clustering.fit_predict(df_Engage)
+
+# Print the cluster centroids
+print(kmodes_clustering.cluster_centroids_)
+df_Engage_centroids = pd.DataFrame(kmodes_clustering.cluster_centroids_,
+                                   columns=['geographic_area',
+                                            'has_children',
+                                            'edu_desc',
+                                            'salary_bin'])
+
+unique, counts = np.unique(kmodes_clustering.labels_, return_counts=True)
+cat_counts = pd.DataFrame(np.asarray((unique, counts)).T, columns=['Label', 'Number'])
+cat_centroids = pd.concat([df_Engage_centroids, cat_counts], axis=1)
+
+# This was my result for k =8 :
+#   geo     child   educ            salary      my_label
+# [['4.0'   'Yes'   'BSc/MSc'       '2k-3k']
+#  ['4.0'   'Yes'   'High School'   '1k-2k']
+#  ['4.0'   'Yes'   'High School'   '2k-3k']
+#  ['1.0'   'No'    'High School'   '3k-4k']
+#  ['1.0'   'Yes'   'BSc/MSc'       '3k-4k']
+#  ['4.0'   'Yes'   'BSc/MSc'       '1k-2k']
+#  ['3.0'   'No'    'BSc/MSc'       '4k-5k']
+#  ['4.0'   'No'    'BSc/MSc'       '3k-4k']]
+
+# I think, this K-modes should be performed by region
+# and reduce the number of clusters. To see, if hopefully
+# we can have a cluster for each educ level. At least, educ level and salary are correlated
+
+# # --------------- This part is under construction !!!!!!!!!!!!!!!!!
+# # Plotting 'cust_pol_age' before converting
+# sns.distplot(df['cust_pol_age'], bins=10)
+#
+# # Converting cust_policy_age into categorical variable
+# df['pol_age_bin'] = pd.cut(df['cust_pol_age'],
+#                            [0, 10, 20, 30, 40, 50],
+#                            labels=['0-10', '10-20', '20-30', '30-40', '40-50'])
+# # Drop 'cust_pol_age'
+# df = df.drop('cust_pol_age', axis=1)
+#
+# # Doing a copy of of the data frame before
+# df_copy = df.copy()
+# # --------------- This part is under construction !!!!!!!!!!!!!!!!!
+
+
+
 
 
 # We are now going to scale the data so we can do effective clustering of our variables
@@ -406,27 +522,31 @@ boxplot_all_columns(X_std_df, qtl_1, qtl_2)
 
 # -------------- Plotting correlation matrix
 # # Compute the correlation matrix
-# corr = df.corr()
-#
-# # Generate a mask for the upper triangle
-# mask = np.zeros_like(corr, dtype=np.bool)
-# mask[np.triu_indices_from(mask)] = True
-#
-# # Set up the matplotlib figure
-# f, ax = plt.subplots(figsize=(11, 9))
-#
-# # Generate a custom diverging colormap
-# cmap = sns.diverging_palette(220, 10, as_cmap=True)
-#
-# # Draw the heatmap with the mask and correct aspect ratio
-# sns.heatmap(corr, mask=mask, cmap=cmap, vmax=.3, center=0,
-#             square=True, linewidths=.5, cbar_kws={"shrink": .5})
+corr = df.corr()
 
-# # -------------- Plotting pairplots
-# # Pair-plot without regression
-# sns.reset_defaults()
-# sns.pairplot(X_std_df.iloc[:, :8], diag_kind="kde", markers="+")
-# plt.show()
+# Set Up Mask To Hide Upper Triangle
+mask = np.zeros_like(corr, dtype=np.bool)
+mask[np.triu_indices_from(mask)] = True
+np.triu_indices_from(mask)
+mask[np.triu_indices_from(mask)] = True
+
+f, ax = plt.subplots(figsize=(11, 15))
+heatmap = sns.heatmap(corr,
+                      mask=mask,
+                      square=True,
+                      linewidths=0.5,
+                      cmap='coolwarm',
+                      cbar_kws={'shrink': 0.4,
+                                'ticks': [-1, -.5, 0, 0.5, 1]},
+                      vmin=-1,
+                      vmax=1,
+                      annot=True,
+                      annot_kws={'size': 12})
+#add the column names as labels
+ax.set_yticklabels(corr.columns, rotation=0)
+ax.set_xticklabels(corr.columns)
+sns.set_style({'xtick.bottom': True}, {'ytick.left': True})
+plt.show()
 
 # Doing individual scatter plots to find trends in customers and classify them
 
@@ -476,8 +596,23 @@ with sns.color_palette(flatui):
                  markers='x')
     plt.show()
 
+# Perform clustering over education and salary
 
+# Perform clustering over geography and salary
 
+# Perform clustering over life_premiums and has_children
+
+# Perform clustering over life_premiums and has_children
+
+# Perform clustering over policy_age and salary
+pol_age_salary = X_std_df[['cust_pol_age', 'gross_monthly_salary']]
+
+with sns.color_palette(flatui):
+    sns.pairplot(data=pol_age_salary,
+                 y_vars=['cust_pol_age'],
+                 x_vars=['gross_monthly_salary'],
+                 markers='1')
+    plt.show()
 
 # ## Experiment with alternative clustering techniques
 # variance zero cols must go

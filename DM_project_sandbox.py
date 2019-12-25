@@ -1,20 +1,92 @@
 # Import packages
-import os
 import sqlite3
-from datetime import date
-
-import numpy as np
 import pandas as pd
-import seaborn as sns
+import numpy as np
+from datetime import date
+import scipy.cluster.hierarchy as clust_hier
+from scipy import stats
+from scipy.cluster.hierarchy import dendrogram, linkage
 from matplotlib import pyplot as plt
 from pandas.util.testing import assert_frame_equal
-from scipy.cluster.hierarchy import dendrogram, linkage
 from sklearn.cluster import KMeans, DBSCAN
-from sklearn.cluster import MeanShift, estimate_bandwidth
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
-from sklearn import preprocessing
-from kmodes.kmodes import KModes
+import seaborn as sns
+from collections import defaultdict
+from matplotlib.colors import rgb2hex, colorConverter
+from itertools import combinations
+from sklearn.cluster import MeanShift, estimate_bandwidth
+from mpl_toolkits.mplot3d import Axes3D
+import os
+
+# This is a summary of the labs sessions topics we’ve covered
+# Just to put checkmarks on the techniques we are using in this project:
+
+# Session 1: query a database (sqlite3)
+# Session 2: query and join tables (sqlite3)
+# Session 3: explore data (describe, shape, info, unique, dtypes, sum, mean, head, tail, groupby, columns, iloc)
+# Session 4: continuation of session 3
+
+# Session 5 (Impute):
+#	from sklearn.impute import SimpleImputer
+# 	from sklearn.neighbors import KNeighborsClassifier
+#	from sklearn.neighbors import KNeighborsRegressor
+
+# Session 5 (Programming): Clustering
+#	minMax	(scale, normalization)
+#	from scipy.spatial.distance import Euclidean
+
+# Session 6 (Normalizing and PCA):
+#	from sklearn.preprocessing import MinMaxScaler
+#	from sklearn.preprocessing import StandardScaler
+#	from sklearn.decomposition import PCA
+
+# Session 7 (): correlation matrix, encoding:
+#	from sklearn.preprocessing import OneHotEncoder
+#	from sklearn import preprocessing
+#	le_status = preprocessing.LabelEncoder()
+
+# Session 8 (Encoding):
+# (transforming categorical to numerical) the status values of each customer
+#	from sklearn import preprocessing
+#	le_status = preprocessing.LabelEncoder()
+
+# Session 9 (Kmeans, Silhouttes):
+#	elbow_plot function
+#	silhouette
+#	Kmeans
+
+# Session 10 (Hier. Clustering, K-modes):
+#	from scipy.cluster.hierarchy import dendrogram, linkage
+#	from scipy.cluster import hierarchy
+#	from pylab import rcParams
+#	from sklearn.cluster import AgglomerativeClustering
+#	import sklearn.metrics as sm
+# 	from kmodes.kmodes import KModes
+
+# Session 11 (Classification tree):
+#	from sklearn.model_selection import cross_val_score
+#	from sklearn import tree
+#	from sklearn.tree import DecisionTreeClassifier, plot_tree
+#	from sklearn.model_selection import train_test_split # Import train_test_split function
+#	from sklearn import metrics #Import scikit-learn metrics module for accuracy calculation
+#	from dtreeplt import dtreeplt
+#	import graphviz
+
+# Session 12 (Self Organizing Map):
+#	from sompy.visualization.mapview import View2DPacked
+#	from sompy.visualization.mapview import View2D
+#	from sompy.visualization.bmuhits import BmuHitsView
+#	from sompy.visualization.hitmap import HitMapView
+
+# Session 13 (DB Scan & Mean Shift):
+#	from sklearn.cluster import DBSCAN
+#	from sklearn import metrics
+#	from sklearn.cluster import MeanShift, estimate_bandwidth
+
+# Session 14 (GaussianMixture):
+#	from sklearn import mixture
+
 
 # -------------- Querying the database file
 
@@ -256,46 +328,14 @@ df['has_children'] = df['has_children'].map({1:'Yes', 0: 'No'})
 print("6. Are there values greater than policy_creation _year on the 'birth_year'?: ",
       sum(np.where(df['policy_creation_year'] < (df['birth_year'] + 18), 1, 0)))
 
-# -------------- Plotting correlation matrix to check if birthday_year can be
-# associated to another variable due to their high correlation
-# # Compute the correlation matrix
-corr = df.corr()
-
-# Set Up Mask To Hide Upper Triangle
-
-mask = np.zeros_like(corr, dtype=np.bool)
-mask[np.triu_indices_from(mask)] = True
-np.triu_indices_from(mask)
-mask[np.triu_indices_from(mask)] = True
-
-fig, ax = plt.subplots(figsize=(11, 15))
-heatmap = sns.heatmap(corr,
-                      mask=mask,
-                      square=True,
-                      linewidths=0.5,
-                      cmap='coolwarm',
-                      cbar_kws={'shrink': 0.4,
-                                'ticks': [-1, -.5, 0, 0.5, 1]},
-                      vmin=-1,
-                      vmax=1,
-                      annot=True,
-                      annot_kws={'size': 12})
-#add the column names as labels
-ax.set_yticklabels(corr.columns, rotation=0)
-ax.set_xticklabels(corr.columns)
-sns.set_style({'xtick.bottom': True}, {'ytick.left': True})
-fig.savefig("corr_matrix.png")
-
-# The correlation matrix shows a correlation between salary and birth year
-# So let's drop birth_year column, but keep in mind that people with high salary might be older do to the correlation
-
-# Due to the high levels of inconsistent data in the birth year column we decide to drop this column as the data in it cannot be trusted
-df.drop('birth_year', axis=1, inplace=True)
+#due to the high levels of inconsistent data in the birth year column we decide to drop this column as the data in it cannot be trusted
+df.drop('birth_year',axis=1, inplace=True)
 
 # customer_monetary_value (CMV), nothing to verify
 # claims_rate, nothing to verify
 # all premiums, nothing to verify
 # all the other columns, (nothing to verify)
+
 
 # Categorical boolean mask
 categorical_feature_mask = df.dtypes == object
@@ -304,12 +344,11 @@ categorical_cols = df.columns[categorical_feature_mask].tolist()
 
 df_cat = df.loc[:, categorical_cols]
 
-df.drop(categorical_cols, axis=1, inplace=True)
-
+df.drop(categorical_cols,axis=1, inplace=True)
 # -------------- Detecting outliers
 # After logical validation, we check for outliers using different methods:
 # 1) Histograms
-def hist_all_columns(df_in):
+def outliers_hist(df_in):
     fig, axes = plt.subplots(len(df_in.columns) // 3, 3, figsize=(20, 48))
 
     i = 0
@@ -321,9 +360,9 @@ def hist_all_columns(df_in):
 
 
 # Apply histogram function to the entire data frame
-# hist_all_columns(df)
+outliers_hist(df)
 
-# -------------- Calculating additional columns
+# -------------- Caculating additional columns
 
 # With the additional information given,
 # it's possible to obtain extra valuable information.
@@ -600,7 +639,11 @@ ax.set_xticklabels(corr.columns)
 sns.set_style({'xtick.bottom': True}, {'ytick.left': True})
 plt.show()
 
-# Doing individual scatter plots to find trends in customers and classify them
+# References for detecting outliers:
+# https://www.dataquest.io/blog/tutorial-advanced-for-loops-python-pandas/
+# https://wellsr.com/python/python-create-pandas-boxplots-with-dataframes/
+# https://notebooks.ai/rmotr-curriculum/outlier-detection-using-boxplots-a89cd3ee
+# https://seaborn.pydata.org/examples/horizontal_boxplot.html
 
 # Get columns names
 X_std_df.columns
@@ -795,9 +838,30 @@ fig.clf()
 #         print('Error caught:'.format(e))
 # plt.show()
 
+
+#Kmodes
+
+km = KModes(n_clusters=4, init='random', n_init=50, verbose=1)
+
+
+clusters = km.fit_predict(df_cat)
+
+# Print the cluster centroids
+print(km.cluster_centroids_)
+
+cat_centroids = pd.DataFrame(km.cluster_centroids_,
+                             columns = categorical_cols)
+
+unique, counts = np.unique(km.labels_, return_counts=True)
+
+cat_counts = pd.DataFrame(np.asarray((unique, counts)).T, columns = ['Label','Number'])
+
+cat_centroids = pd.concat([cat_centroids, cat_counts], axis = 1)
+df_cat.loc[df_cat.has_children == "Yes", "edu_desc"].value_counts()
+
 # DBSCAN
 
-db = DBSCAN(eps=1, min_samples=10).fit(X_std)
+db = DBSCAN(eps=1, min_samples=20).fit(X_std)
 
 labels = db.labels_
 
@@ -976,41 +1040,19 @@ def compare_init_methods(data,list_init_methods,K_n):
     return keys, centroids_list, labels_list
 
 
-def kneigh_fillna(df, X, y):
-    """
-    This function returns a dataframe with filled na values using KNeighbours.
-    df: original data DataFrame
-    X: list of the static columns names to be used to predict na values.
-    y: string corresponding to the name of the value to fill na values
-    """
-    # select the other variables to be used in the regressor for prediction and fill in their missing values with respective averages
-    # (avg fillna applied because kmeans regressor doesn't work with variables that have missing values)
-    tempavg = df.drop(columns=y).fillna(df.drop(columns=y).mean())
-    # filter on columns of interest
-    reg = pd.concat([tempavg, df[y]], axis=1)
+#run different initialisation methods and optimal k value(elbow)
 
-    # splitting the reg dataframe to incomplete table
-    # contains the rows of each Nan value of variable to be predicted in reg df
-    incomplete = df[reg[y].isna()]
+init_methods = ['random','points','++']
+number_K=3
 
-    # splitting the reg dataframe to complete table
-    # contains the rows of each valid value of the variable to be predicted in reg df
-    complete = df[~reg.index.isin(incomplete.index)]
+keys, centroids_list, labels_list = compare_init_methods(clust.iloc[:,0:4].values,init_methods,number_K)
 
-    # setting the kNeighbours regressor using euclidean distances
-    regressor = KNeighborsRegressor(10, weights='distance', metric='euclidean')
 
-    # fitting the regressor to the dataframe using the complete df filling empty values in the dependant variable with the mean
-    fitting = regressor.fit(reg[~reg.index.isin(incomplete.index)].loc[:, X], complete.loc[:, [y]])
+#pick best kmeans iteration and initialisation method from plots above (please chnage accordingly)
+best_init=3
+best_method="points"
 
-    # predicting the values using the incomplete df filling empty values in the dependant variable with the mean
-    incomplete[y] = fitting.predict(reg[reg[y].isna()].loc[:, X])
+centroids_dict=dict(zip(keys,centroids_list))
+labels_dict =dict(zip(keys,labels_list))
+print(" Labels: \n {} \n Centroids: \n {}".format(labels_dict["{}:{}".format(best_init,best_method)], centroids_dict["{}:{}".format(best_init,best_method)]))
 
-    # applying concatenate to the original df
-    df = pd.concat([complete, incomplete], axis=0)
-
-    # reset the index
-    df.reset_index(drop=True, inplace=True)
-
-    # return the original df with filled values
-    return df

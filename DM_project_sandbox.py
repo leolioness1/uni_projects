@@ -79,7 +79,7 @@ lob_df.head()
 engage_df.head()
 
 #We import the excel data to check if it is the same as that we receive from the DB
-excel_df=pd.read_csv(os.path.join(os.getcwd(),"A2Z Insurance.csv"))
+excel_df = pd.read_csv(os.path.join(os.getcwd(), "A2Z Insurance.csv"))
 
 # Left join the 2 tables on Customer Identity and reset the index
 combined_df = pd.merge(engage_df, lob_df, on='Customer Identity', how='left')
@@ -377,7 +377,7 @@ df['premium_wage_ratio'] = df['total_premiums']/(df['gross_monthly_salary']*12)
 
 # --------------K-modes-----
 # separate df into engage and consume
-df_Engage = df_cat.join(df['gross_monthly_salary'], how='inner')
+df_Engage = df_cat.join(df['gross_monthly_salary'])
 df_Engage.dtypes
 
 # Plotting 'gross_monthly_salary' before converting to categorical
@@ -411,36 +411,92 @@ df_Engage.dtypes
 df_Engage['salary_bin'] = df_Engage['salary_bin'].astype(str)
 df_Engage.dtypes
 
+# ------ Count-plot for customers by salary_bin and education level
+plt.figure()
+ax = sns.countplot(x=df_Engage['salary_bin'], hue='edu_desc', data=df_Engage,
+                   order=df_Engage['salary_bin'].value_counts().index,
+                   hue_order=['Basic', 'High School', 'BSc/MSc', 'PhD'])
+plt.legend(loc='upper right')
+
+for p in ax.patches:
+    ax.annotate(format(p.get_height(), '1.0f'),
+    (p.get_x() + p.get_width() / 2., p.get_height()),
+    ha='center', va='center', xytext=(0, 10), textcoords='offset points')
+
+plt.savefig('salary_bin_educ.png')
+
+# Most of the customers belong to the '1k-2k', '2k-3k', '3k-4k' bins
+# Most of the customers education level is High School and BSc/MSc
+# There is no correlation between education level and salary
+# So, education level should not be a valuable variable for the analysis
+
+# ------ Count-plot for customers by salary_bin and geographic_area
+plt.figure()
+
+df_plot = df_Engage.groupby(['salary_bin', 'geographic_area']).size().reset_index().pivot(columns='salary_bin', index='geographic_area', values=0)
+df_plot.plot(kind='bar', stacked=True)
+
+# With this plot we can determine 3 things:
+# 1. There are more customers in region 4
+# 2. Region 2 is the region with less customers
+# 3. The proportion of salary ranges is almost homogeneous over all the regions
+
+plt.savefig('salary_bin_geo.png')
+del df_plot
+
+# ------ Count-plot for customers by salary_bin and has_children
+plt.figure()
+
+df_plot = df_Engage.groupby(['salary_bin', 'has_children']).size().reset_index().pivot(columns='salary_bin', index='has_children', values=0)
+ax = df_plot.plot(kind='bar', stacked=True)
+
+# With this plot we can determine 2 main things:
+# 1. There are more customers with children: 7000 has children and 3000 does not.
+# 2. The proportion of higher salaries is higher over the customers with no children.
+
+plt.savefig('salary_bin_children.png')
+del df_plot
+
+# Looking at the plots of categorical from the Engage data frame,
+# 1. The main variable in this data frame is salary.
+# 2. Age can be an important variable as well, but since a lot of the data is wrong
+# 	then is better not to trust in this variable.
+
+# Choosing K by comparing Cost against each K. Without education level. Copied from:
+# https://www.kaggle.com/ashydv/bank-customer-clustering-k-modes-clustering
+cost = []
+for num_clusters in list(range(1, 5)):
+    kmode = KModes(n_clusters=num_clusters, init="Cao", n_init=1, verbose=1)
+    kmode.fit_predict(df_Engage.drop(columns=['edu_desc']))
+    cost.append(kmode.cost_)
+
+y = np.array([i for i in range(1, 5, 1)])
+plt.figure()
+plt.plot(y, cost)
+plt.savefig('K-mode_elbow.png')
+
 ## ------ DM lab code for K-modes
-kmodes_clustering = KModes(n_clusters=8, init='random', n_init=50, verbose=1)
-clusters_cat = kmodes_clustering.fit_predict(df_Engage)
+kmodes_clustering = KModes(n_clusters=2, init='random', n_init=50, verbose=1)
+clusters_cat = kmodes_clustering.fit_predict(df_Engage.drop(columns=['edu_desc']))
 
 # Print the cluster centroids
 print(kmodes_clustering.cluster_centroids_)
 df_Engage_centroids = pd.DataFrame(kmodes_clustering.cluster_centroids_,
                                    columns=['geographic_area',
                                             'has_children',
-                                            'edu_desc',
                                             'salary_bin'])
 
 unique, counts = np.unique(kmodes_clustering.labels_, return_counts=True)
 cat_counts = pd.DataFrame(np.asarray((unique, counts)).T, columns=['Label', 'Number'])
 cat_centroids = pd.concat([df_Engage_centroids, cat_counts], axis=1)
 
-# This was my result for k =8 :
-#   geo     child   educ            salary      my_label
-# [['4.0'   'Yes'   'BSc/MSc'       '2k-3k']
-#  ['4.0'   'Yes'   'High School'   '1k-2k']
-#  ['4.0'   'Yes'   'High School'   '2k-3k']
-#  ['1.0'   'No'    'High School'   '3k-4k']
-#  ['1.0'   'Yes'   'BSc/MSc'       '3k-4k']
-#  ['4.0'   'Yes'   'BSc/MSc'       '1k-2k']
-#  ['3.0'   'No'    'BSc/MSc'       '4k-5k']
-#  ['4.0'   'No'    'BSc/MSc'       '3k-4k']]
+# Showing the the number of customers of each cluster
+counts
 
-# I think, this K-modes should be performed by region
-# and reduce the number of clusters. To see, if hopefully
-# we can have a cluster for each educ level. At least, educ level and salary are correlated
+# I don't know how to interpret the results from K-modes
+# I can have 2 or 4 clusters, but I don't know how those can be useful
+
+
 
 # # --------------- This part is under construction !!!!!!!!!!!!!!!!!
 # # Plotting 'cust_pol_age' before converting
@@ -456,10 +512,6 @@ cat_centroids = pd.concat([df_Engage_centroids, cat_counts], axis=1)
 # # Doing a copy of of the data frame before
 # df_copy = df.copy()
 # # --------------- This part is under construction !!!!!!!!!!!!!!!!!
-
-
-
-
 
 # We are now going to scale the data so we can do effective clustering of our variables
 # Standardize the data to have a mean of ~0 and a variance of 1

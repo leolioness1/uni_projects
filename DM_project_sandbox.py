@@ -19,7 +19,7 @@ from itertools import combinations
 from sklearn.cluster import MeanShift, estimate_bandwidth
 from mpl_toolkits.mplot3d import Axes3D
 import os
-
+from kmodes.kmodes import KModes
 # This is a summary of the labs sessions topics we’ve covered
 # Just to put checkmarks on the techniques we are using in this project:
 
@@ -406,9 +406,6 @@ df['cust_acq_cost'] = df['total_premiums'] * df['cust_pol_age'] - df['customer_m
 # 'motor_premiums', 'household_premiums', 'health_premiums',
 # 'life_premiums', 'work_premiums'
 
-# Calculate 'Amount paid by the insurance company'
-df['amt_paidby_comp_2yrs'] = df['claims_rate'] * df['total_premiums']
-
 # Calculate the premium/wage proportion
 
 df['premium_wage_ratio'] = df['total_premiums'] / (df['gross_monthly_salary'] * 12)
@@ -587,13 +584,13 @@ sns.boxplot(df['claims_rate'])
 # There are many values above 100% of claim. This is bad for an insurance company
 # Let's consider claims rate above 150% as outliers and save them in a new data frame
 # named high_claims_df:
-high_claims_df = df[df['claims_rate'] > 1.5]
-
-# How many were they?
-len(high_claims_df)  # 18 high claimers
-
-# Now let's drop those customers from df
-df = df[df.claims_rate <= 1.5]
+# high_claims_df = df[df['claims_rate'] > 1.5]
+#
+# # How many were they?
+# len(high_claims_df)  # 18 high claimers
+#
+# # Now let's drop those customers from df
+# df = df[df.claims_rate <= 1.5]
 
 # Now, let's plot the distribution of this variable
 sns.distplot(df['claims_rate'])
@@ -617,7 +614,7 @@ claim_prem_df = claim_prem_df.drop('claims_rate', axis=1)
 # Group by claim rate  bin and sum the premiums
 claim_prem_df.groupby('claims_bin').sum().plot.bar(stacked=True,
                                                    width=0.92,
-                                                   colors=color_palette_list)
+                                                   color=color_palette_list)
 # Plot formatting
 plt.legend(prop={'size': 12}, loc='best')
 plt.title('Sum of Premiums by claims rate and type of Premium')
@@ -734,15 +731,15 @@ reversals_df.append(life_reversals_df)
 reversals_df.append(motor_reversals_df)
 reversals_df.append(work_reversals_df)
 
-# Drop clients with reversals, because they will require a totally different marketing treatment
+#flag clients with reversals, because they will require a totally different marketing treatment
 df.shape    # (9964, 13)
 
-df.drop(df[df['health_premiums'] < 0].index, inplace=True)
-df.drop(df[df['life_premiums'] < 0].index, inplace=True)
-df.drop(df[df['work_premiums'] < 0].index, inplace=True)
-df.drop(df[df['motor_premiums'] < 0].index, inplace=True)
-df.drop(df[df['household_premiums'] < 0].index, inplace=True)
-df.shape    # (7811, 13): 2153 customers have reversal condition
+# df.drop(df[df['health_premiums'] < 0].index, inplace=True)
+# df.drop(df[df['life_premiums'] < 0].index, inplace=True)
+# df.drop(df[df['work_premiums'] < 0].index, inplace=True)
+# df.drop(df[df['motor_premiums'] < 0].index, inplace=True)
+# df.drop(df[df['household_premiums'] < 0].index, inplace=True)
+# df.shape    # (7811, 13): 2153 customers have reversal condition
 
 del health_reversals_df, household_reversals_df, life_reversals_df, motor_reversals_df, work_reversals_df
 
@@ -755,6 +752,7 @@ plt.title('Customer Monetary Value distribution')
 plt.xlabel('CMV (EUR)')
 plt.ylabel('Density')
 plt.show()
+plt.clf()
 
 # Plotting CAC
 sns.distplot(df['cust_acq_cost'], hist=True, kde=True, label='CAC')
@@ -763,26 +761,25 @@ plt.title('Customer Acquisition Cost distribution')
 plt.xlabel('CAC (EUR)')
 plt.ylabel('Density')
 plt.show()
-
+plt.clf()
 df.shape    # 7811 Customers
 # After looking at the CAC histogram is possible to say that CAC > 120k are outliers
 High_CAC = df[df['cust_acq_cost'] > 120000]
-df.drop(df[df['cust_acq_cost'] > 120000].index, inplace=True)
-df.shape    # 7804 Customers. Just 7 Customers with High CAC
+# df.drop(df[df['cust_acq_cost'] > 120000].index, inplace=True)
+# df.shape    # 7804 Customers. Just 7 Customers with High CAC
 
 # The same happen to CMV values, all customers with CMV > 3k will be considered outliers
 High_CMV = df[df['customer_monetary_value'] > 3000]
-df.drop(df[df['customer_monetary_value'] > 3000].index, inplace=True)
-df.shape    # 7803 Customers. Just 1 Customer with High CMV (The special one)
+# df.drop(df[df['customer_monetary_value'] > 3000].index, inplace=True)
+# df.shape    # 7803 Customers. Just 1 Customer with High CMV (The special one)
 
 # Now, let's plot CAC vs CMV for each customer to see if there's some trend:
 sns.scatterplot(x=df['cust_acq_cost'],
                 y=df['customer_monetary_value'], data=df)
-plt.show
+plt.show()
 # Just looking at these 2 variables, there's no a straight trend, but a positive trend.
 # Which implies, that the company invest more on gaining or maintaining customers with high salaries
 
-# Clustering can be performed using those two variables
 
 # --------------CR vs PWR-----
 # CR: Claim Rate. PWR: Premium Wage Ratio
@@ -793,7 +790,7 @@ sns.distplot(df['premium_wage_ratio'])
 # Now, let's plot CAC vs CMV for each customer to see if there's some trend:
 sns.scatterplot(x=df['premium_wage_ratio'],
                 y=df['claims_rate'], data=df)
-plt.show
+plt.show()
 
 # Clustering can be performed using those two variables
 scaler = StandardScaler()
@@ -925,15 +922,6 @@ counts
 
 # I don't know how to interpret the results from K-modes
 # I can have 2 or 4 clusters, but I don't know how those can be useful
-
-
-
-
-# We are now going to scale the data so we can do effective clustering of our variables
-# Standardize the data to have a mean of ~0 and a variance of 1
-scaler = StandardScaler()
-X_std = scaler.fit_transform(df)
-X_std_df = pd.DataFrame(X_std, columns=df.columns)
 
 # --------------Outliers-----
 
@@ -1239,7 +1227,7 @@ df_cat.loc[df_cat.has_children == "Yes", "edu_desc"].value_counts()
 
 # DBSCAN
 
-db = DBSCAN(eps=1, min_samples=20).fit(X_std)
+db = DBSCAN(eps=1, min_samples=5).fit(X_std)
 
 labels = db.labels_
 
@@ -1271,7 +1259,7 @@ for i in range(0, pca_2d.shape[0]):
         c3 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='b', marker='*')
 
 plt.legend([c1, c2, c4, c5, c6, c7, c3],
-           ['Cluster 1', 'Cluster 2', 'Cluster 3', 'Cluster 4', 'Cluster 5', 'Cluster 5', 'Noise'])
+           ['Cluster 1', 'Cluster 2', 'Cluster 3', 'Cluster 4', 'Cluster 5', 'Cluster 6', 'Noise'])
 plt.title('DBSCAN finds 6 clusters and noise')
 plt.show()
 # plt.clf()
@@ -1308,11 +1296,10 @@ ax.set_xlabel('PCA 1')
 ax.set_ylabel('PCA 2')
 ax.set_zlabel('PCA 3')
 
-# mean shift
-to_MS = X_std
+
 # The following bandwidth can be automatically detected using
-my_bandwidth = estimate_bandwidth(to_MS,
-                                  quantile=0.2,
+my_bandwidth = estimate_bandwidth(X_std,
+                                  quantile=0.1,
                                   n_samples=1000)
 
 ms = MeanShift(bandwidth=my_bandwidth,
@@ -1335,8 +1322,8 @@ unique, counts = np.unique(labels, return_counts=True)
 print(np.asarray((unique, counts)).T)
 
 # lets check our are they distributed
-pca = PCA(n_components=3).fit(to_MS)
-pca_2d = pca.transform(to_MS)
+pca = PCA(n_components=3).fit(X_std)
+pca_2d = pca.transform(X_std)
 for i in range(0, pca_2d.shape[0]):
     if labels[i] == 0:
         c1 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='r', marker='+')

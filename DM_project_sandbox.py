@@ -23,6 +23,10 @@ from scipy.cluster.vq import kmeans2
 import os
 from kmodes.kmodes import KModes
 from sklearn import mixture
+from sklearn.metrics import silhouette_samples
+from sklearn.metrics import silhouette_score
+
+
 # This is a summary of the labs sessions topics we’ve covered
 # Just to put checkmarks on the techniques we are using in this project:
 
@@ -273,7 +277,10 @@ df.columns
 df = df.astype(type_dict)
 df.dtypes
 
-# -------------- Business logic validation of the data
+#########################################################
+# --------- Logic Validation of each variable -----------
+#########################################################
+
 # The current year of the database is 2016.
 # Check for wrong values on each column, based on the following premises:
 
@@ -347,10 +354,20 @@ df['number_cancelled_premiums']=df[['motor_premiums', 'household_premiums', 'hea
 
 # all the other columns, (nothing to verify)
 
-# -------------- Detecting outliers
-# After logical validation, we check for outliers using different methods:
-# 1) Histograms
-def outliers_hist(df_in):
+
+# Categorical boolean mask
+categorical_feature_mask = df.dtypes == object
+# filter categorical columns using mask and turn it into a list
+categorical_cols = df.columns[categorical_feature_mask].tolist()
+
+df_cat = df.loc[:, categorical_cols]
+
+df.drop(categorical_cols, axis=1, inplace=True)
+
+
+# -------------- Take a look at all variables distribution
+# After logical validation, we check the distribution of each variable by plotting histograms
+def hist_df(df_in):
     fig, axes = plt.subplots(len(df_in.columns) // 3, 3, figsize=(20, 48))
 
     i = 0
@@ -361,8 +378,12 @@ def outliers_hist(df_in):
     fig.savefig("outliers_hist.png")
 
 
+# Apply histogram function to the entire data frame
+hist_df(df)
 
-# -------------- Calculating additional columns
+#########################################################
+# --------- Calculating additional variables ------------
+#########################################################
 
 # With the additional information given,
 # it's possible to obtain extra valuable information.
@@ -405,19 +426,23 @@ df['cust_acq_cost'] = df['total_premiums'] * df['cust_pol_age'] - df['customer_m
 # 'motor_premiums', 'household_premiums', 'health_premiums',
 # 'life_premiums', 'work_premiums'
 
+# Calculate 'Amount paid by the insurance company'
+df['amt_paidby_comp_2yrs'] = df['claims_rate'] * df['total_premiums']
+
 # Calculate the premium/wage proportion
 
 df['premium_wage_ratio'] = df['total_premiums'] / (df['gross_monthly_salary'] * 12)
 len(df)
 
-# Categorical boolean mask
-categorical_feature_mask = df.dtypes == object
-# filter categorical columns using mask and turn it into a list
-categorical_cols = df.columns[categorical_feature_mask].tolist()
-# Apply histogram function to the entire data frame
-outliers_hist(df.drop(categorical_cols, axis=1))
+# We are now going to scale the data to visualize all box-plots in one chart
+# Standardize the data to have a mean of ~0 and a variance of 1
+scaler = StandardScaler()
+X_std = scaler.fit_transform(df)
+X_std_df = pd.DataFrame(X_std, columns=df.columns)
 
-# --------------Outliers-----
+#########################################################
+# ------------------- Excluding outliers ----------------
+#########################################################
 
 # Define the lower and upper quartiles boundaries for plotting the boxplots
 # and for dropping values. Numbers between (0,1) and qtl1 < qtl2
@@ -454,457 +479,405 @@ def IQR_drop_outliers(df_in, qtl_1, qtl_2):
     return df_out, df_outliers
 
 
-# Reference:
+# References:
 # https://medium.com/@prashant.nair2050/hands-on-outlier-detection-and-treatment-in-python-using-1-5-iqr-rule-f9ff1961a414
-# We are now going to scale the data so we can do effective clustering of our variables
-# Standardize the data to have a mean of ~0 and a variance of 1
-scaler = StandardScaler()
-X_std = scaler.fit_transform(df.drop(categorical_cols, axis=1))
-X_std_df = pd.DataFrame(X_std, columns=df.drop(categorical_cols, axis=1).columns)
+# https://www.dataquest.io/blog/tutorial-advanced-for-loops-python-pandas/
+# https://wellsr.com/python/python-create-pandas-boxplots-with-dataframes/
+# https://notebooks.ai/rmotr-curriculum/outlier-detection-using-boxplots-a89cd3ee
+# https://seaborn.pydata.org/examples/horizontal_boxplot.html
+
 # Apply box-plot function to the selected columns
 boxplot_all_columns(X_std_df, qtl_1, qtl_2)
 
 # There are outliers, so let's remove them with the 'IQR_drop_outliers' function
 df, df_outliers = IQR_drop_outliers(df, qtl_1, qtl_2)
 
-# Standardize the data to have a mean of ~0 and a variance of 1
-scaler = StandardScaler()
-X_std = scaler.fit_transform(df.drop(categorical_cols, axis=1))
-X_std_df = pd.DataFrame(X_std, columns=df.drop(categorical_cols, axis=1).columns)
-
-# Plot without outliers
-boxplot_all_columns(X_std_df, qtl_1, qtl_2)
-df.isnull().sum()
-df_cat = df.loc[:, categorical_cols]
-df.drop(categorical_cols, axis=1, inplace=True)
-
-# # --------------Plotting variables-----
-# # Plot variables of df to get more insights about the customers and the business
-# # ----------- 1. Pie chart for number of customers by region (geographic area):
-# df_region = df_cat.groupby('geographic_area')['geographic_area'].count()
-# color_palette_list = ["#4878D0", "#6ACC64", "#D65F5F", "#956CB4", "#D5BB67", "#82C6E2"]
-#
-# fig, ax = plt.subplots()
-# plt.rcParams['font.sans-serif'] = 'Arial'
-# plt.rcParams['font.family'] = 'sans-serif'
-# plt.rcParams['text.color'] = '#909090'
-# plt.rcParams['axes.labelcolor'] = '#909090'
-# plt.rcParams['xtick.color'] = '#909090'
-# plt.rcParams['ytick.color'] = '#909090'
-# plt.rcParams['font.size'] = 12
-# labels = [df_region.index[0], df_region.index[1], df_region.index[2], df_region.index[3]]
-# counts = [df_region[0], df_region[1], df_region[2], df_region[3]]
-# explode = (0.1, 0.1, 0.1, 0.1)
-#
-#
-# def func(pct, allvals):
-#     absolute = int(pct / 100. * np.sum(allvals))
-#     return "{:.1f}%\n({:,})".format(pct, absolute)
-#
-#
-# ax.pie(counts, explode=explode,
-#        colors=color_palette_list[0:4], autopct=lambda pct: func(pct, df_region),
-#        shadow=False, startangle=0,
-#        pctdistance=1.2, labeldistance=1.1)
-# ax.axis('equal')
-# ax.legend(labels, loc='best', title="Region")
-# ax.set_title("Number of customers by geographic area")
-# plt.show()
-#
-# del df_region, color_palette_list, labels, counts, explode
-#
-# # ----------- 2. Pie chart for number of customers by education level:
-# df_educ = df_cat.groupby('edu_desc')['edu_desc'].count()
-# color_palette_list = ["#4878D0", "#6ACC64", "#D65F5F", "#956CB4", "#D5BB67", "#82C6E2"]
-# #
-# # fig, ax = plt.subplots()
-# # plt.rcParams['font.sans-serif'] = 'Arial'
-# # plt.rcParams['font.family'] = 'sans-serif'
-# # plt.rcParams['text.color'] = '#909090'
-# # plt.rcParams['axes.labelcolor'] = '#909090'
-# # plt.rcParams['xtick.color'] = '#909090'
-# # plt.rcParams['ytick.color'] = '#909090'
-# # plt.rcParams['font.size'] = 12
-# labels = [df_educ.index[0], df_educ.index[1], df_educ.index[2], df_educ.index[3]]
-# counts = [df_educ[0], df_educ[1], df_educ[2], df_educ[3]]
-# explode = (0.1, 0.1, 0.1, 0.1)
-#
-#
-# def func(pct, allvals):
-#     absolute = int(pct / 100. * np.sum(allvals))
-#     return "{:.1f}%\n({:,})".format(pct, absolute)
-#
-#
-# ax.pie(counts, explode=explode,
-#        colors=color_palette_list[0:4], autopct=lambda pct: func(pct, df_educ),
-#        shadow=False, startangle=45,
-#        pctdistance=1.2, labeldistance=1.1)
-# ax.axis('equal')
-# ax.legend(labels, loc='best', title="Education")
-# ax.set_title("Number of customers by education level")
-# plt.show()
-#
-# del df_educ, color_palette_list, labels, counts, explode
-#
-# # ----------- 4. Histogram for salary:
-# # Check the distribution of this variable individually:
-# sns.distplot(df['gross_monthly_salary'], kde=False)
-# # Using the zoom tool on the plot, it's possible to see that
-# # values above 5k are outliers. Let's check this with exact numbers
-# df.sort_values(by=['gross_monthly_salary'], ascending=False).head(10)
-# # Effectively, just 3 customers has a salary above 5k.
-# # Customers ID: 5883, 8262, 7511
-# # Let's exclude them from the main df and store their values in df_rich_ppl
-# df_rich_ppl = df[df['gross_monthly_salary'] > 5000]
-# # Now let's drop those customers from df
-# df = df[df.gross_monthly_salary < 5000]
-#
-# # Let's plot again the histogram for salary:
-# sns.distplot(df['gross_monthly_salary'], kde=False, color='green', bins=100)
-# plt.title('Gross Monthly Salary (EUR)', fontsize=18)
-# plt.xlabel('Customers salaries', fontsize=16)
-# plt.ylabel('Frequency', fontsize=16)
-# plt.show()
-#
-# # ----------- 4. Density curves for salary by each education level:
-# # Typically, high salaries are related with high levels of education.
-# # Let's plot a Density curve of salary for each education level to check the distributions
-#
-# # Auxiliary df for education levels and salaries:
-# df_educ = pd.merge(df['gross_monthly_salary'], df_cat['edu_desc'],
-#                    left_on='Customer Identity',
-#                    right_on='Customer Identity',
-#                    how='left')
-# # df_educ.shape
-# B_df = df_educ[df_educ.edu_desc == 'Basic']
-# H_df = df_educ[df_educ.edu_desc == 'High School']
-# D_df = df_educ[df_educ.edu_desc == 'BSc/MSc']
-# P_df = df_educ[df_educ.edu_desc == 'PhD']
-#
-# sns.distplot(B_df['gross_monthly_salary'], hist=False, kde=True, label='Basic')
-# sns.distplot(H_df['gross_monthly_salary'], hist=False, kde=True, label='High School')
-# sns.distplot(D_df['gross_monthly_salary'], hist=False, kde=True, label='BSc/MSc')
-# sns.distplot(P_df['gross_monthly_salary'], hist=False, kde=True, label='PhD')
-#
-# # Plot formatting
-# plt.legend(prop={'size': 12})
-# plt.title('Salary distribution for each education level')
-# plt.xlabel('Gross Monthly Salary (EUR)')
-# plt.ylabel('Density')
-# plt.show()
-#
-# # Just the clients with Basic education has a low, skewed salary density
-# # The other three are homogeneously dense distributed between 0.9 k and 4.5 k (EUR)
-# del df_educ, B_df, H_df, D_df, P_df
-#
-# # ----------- 5. Density curve for policy age:
-# # Check the distribution of this variable individually:
-# sns.distplot(df['cust_pol_age'], kde=False)
-# plt.title('Policy age', fontsize=18)
-# plt.xlabel('Customer policy age (years)', fontsize=16)
-# plt.ylabel('Frequency', fontsize=16)
-# plt.show()
-#
-# # This Histogram shows the behavior of customer acquisition by
-# # the insurance company over time. It explicitly shows a
-# # constant distribution on the policy age for customers.
-# # Which means that the company acquired the same quantity of customers
-# # each year: 420. Except, for the year 1983 (2016 - 33 years),
-# # when the company gained 870 customers.
-# # Therefore, in absolute terms, the company always keep the same quantity of customers.
-#
-# # ----------- 5. Distribution of premiums by policy age and line of business
-# # Auxiliary df for plotting:
-# color_palette_list = ["#4878D0", "#6ACC64", "#D65F5F", "#956CB4", "#D5BB67", "#82C6E2"]
-#
-# pol_age_prem_df = df[['motor_premiums',
-#                       'household_premiums',
-#                       'health_premiums',
-#                       'life_premiums',
-#                       'work_premiums',
-#                       'cust_pol_age']]
-#
-# # Group by policy age segment and sum the premiums
-# pol_age_prem_df.groupby('cust_pol_age').sum().plot.area(color=color_palette_list)
-# # Plot formatting
-# plt.legend(prop={'size': 12}, loc='best')
-# plt.title('Sum of Premiums by policy age and type of Premium')
-# plt.xlabel('Policy age')
-# plt.ylabel('Premiums (EUR)')
-# plt.show()
-#
-# # From this plot it is possible easy to see the proportions of all customers premiums
-# # depending on their time holding the premiums. This proportion by type of Premium is almost constant
-# # The company is not receiving a great amount of money from older customers' premiums
-# # (above 42 years) maybe because they are no longer living. The medium age policies
-# # (23 to 41 years) has almost a stable behavior, but the "youngest" policies
-# # (20 to 23 years) have a lower sum of all premiums, maybe because they are leaving the company.
-# # Why there are not younger policies? The youngest policy age is 21 years :S
-# # pol_age_prem_df['cust_pol_age'].min()
-#
-# del pol_age_prem_df, color_palette_list
-#
-# # ----------- 6. Sum of Premiums by LOB by Claim Rate ()
-#
-# # Plot a box-plot of the claim rate just to check outliers
-# sns.boxplot(df['claims_rate'])
-#
-# # There are many values above 100% of claim. This is bad for an insurance company
-# # Let's consider claims rate above 150% as outliers and save them in a new data frame
-# # named high_claims_df:
-# # high_claims_df = df[df['claims_rate'] > 1.5]
-# #
-# # # How many were they?
-# # len(high_claims_df)  # 18 high claimers
-# #
-# # # Now let's drop those customers from df
-# # df = df[df.claims_rate <= 1.5]
-#
-# # Now, let's plot the distribution of this variable
-# sns.distplot(df['claims_rate'])
-#
-# # Auxiliary df for plotting:
-# color_palette_list = ["#4878D0", "#6ACC64", "#D65F5F", "#956CB4", "#D5BB67", "#82C6E2"]
-#
-# claim_prem_df = df[['motor_premiums',
-#                     'household_premiums',
-#                     'health_premiums',
-#                     'life_premiums',
-#                     'work_premiums',
-#                     'claims_rate']]
-#
-# # Since the rates can variate too much on the decimals, let's create segments
-# claim_prem_df['claims_bin'] = pd.cut(claim_prem_df['claims_rate'],
-#                                      [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5],
-#                                      labels=['0-10%', '10-20%', '20-30%', '30-40%', '40-50%', '50-60%', '60-70%', '70-80%',
-#                                              '80-90%', '90-100%', '100-110%', '110-120%', '120-130%', '130-140%', '140-150%'])
-# claim_prem_df = claim_prem_df.drop('claims_rate', axis=1)
-# # Group by claim rate  bin and sum the premiums
-# claim_prem_df.groupby('claims_bin').sum().plot.bar(stacked=True,
-#                                                    width=0.92,
-#                                                    color=color_palette_list)
-# # Plot formatting
-# plt.legend(prop={'size': 12}, loc='best')
-# plt.title('Sum of Premiums by claims rate and type of Premium')
-# plt.xlabel('Claim Rate')
-# plt.ylabel('Premiums (EUR)')
-# plt.show()
-#
-# # Conclude something
-#
-# del claim_prem_df, color_palette_list
-#
-# # ----------- 7. Pie chart for sum of premiums by LOB:
-# df_premium = df[['motor_premiums',
-#                  'household_premiums',
-#                  'health_premiums',
-#                  'life_premiums',
-#                  'work_premiums']]
-#
-# df_premium = pd.melt(df_premium, var_name='Premium', value_name='Value')
-#
-# df_premium = df_premium.groupby('Premium')['Value'].sum()
-# color_palette_list = ["#4878D0", "#6ACC64", "#D65F5F", "#956CB4", "#D5BB67", "#82C6E2"]
-#
-# fig, ax = plt.subplots()
-# plt.rcParams['font.sans-serif'] = 'Arial'
-# plt.rcParams['font.family'] = 'sans-serif'
-# plt.rcParams['text.color'] = '#909090'
-# plt.rcParams['axes.labelcolor'] = '#909090'
-# plt.rcParams['xtick.color'] = '#909090'
-# plt.rcParams['ytick.color'] = '#909090'
-# plt.rcParams['font.size'] = 12
-# labels = [df_premium.index[0], df_premium.index[1], df_premium.index[2], df_premium.index[3], df_premium.index[4]]
-# counts = [df_premium[0], df_premium[1], df_premium[2], df_premium[3], df_premium[4]]
-# explode = (0.1, 0.1, 0.1, 0.1, 0.1)
-#
-#
-# def func(pct, allvals):
-#     absolute = int(pct / 100. * np.sum(allvals))
-#     return "{:.1f}%\n({:,})".format(pct, absolute)
-#
-#
-# ax.pie(counts, explode=explode,
-#        colors=color_palette_list[0:5], autopct=lambda pct: func(pct, df_premium),
-#        shadow=False, startangle=0,
-#        pctdistance=1.2, labeldistance=1.1)
-# ax.axis('equal')
-# ax.legend(labels, loc='best', title="Premium")
-# ax.set_title("Sum of Premiums by LOB")
-# plt.show()
-#
-# del df_premium, color_palette_list, labels, counts, explode
-#
-# # ----------- 8. Count of customers by LOB:
-# df_premium = df[['motor_premiums',
-#                  'household_premiums',
-#                  'health_premiums',
-#                  'life_premiums',
-#                  'work_premiums']]
-#
-# df_premium = pd.melt(df_premium, var_name='Premium', value_name='Value')
-# df_premium.head()
-#
-# df_premium = df_premium[df_premium['Value'] > 0].groupby('Premium')['Value'].count()
-#
-# color_palette_list = ["#4878D0", "#6ACC64", "#D65F5F", "#956CB4", "#D5BB67", "#82C6E2"]
-#
-# bar_plot = sns.barplot(x=df_premium.index,
-#                        y=df_premium.values,
-#                        color=color_palette_list[2])
-#
-# # Create labels
-# label = [df_premium.iloc[0],
-#          df_premium.iloc[1],
-#          df_premium.iloc[2],
-#          df_premium.iloc[3],
-#          df_premium.iloc[4]]
-#
-# # Text on the top of each barplot
-# for i in range(len(df_premium)):
-#     plt.text(x=df_premium[i] - 0.5, y=df_premium.iloc[i] + 0.1, s=label[i], size=6)
-#
-# plt.title('Number of customers with positive Premiums')
-# plt.show()
-#
-# del df_premium, color_palette_list, bar_plot, label
-#
-#
-# # ----------- 9. Check the numbers of reversals and exclude them:
-# # Add a column for customers that are leaving the company
-# # Negative values in any of the premiums.
-# health_reversals_df = df[df['health_premiums'] < 0]
-# household_reversals_df = df[df['household_premiums'] < 0]
-# life_reversals_df = df[df['life_premiums'] < 0]
-# motor_reversals_df = df[df['motor_premiums'] < 0]
-# work_reversals_df = df[df['work_premiums'] < 0]
-#
-# # Show the number of reversal by premium
-# reversals_df = pd.DataFrame(list(zip(['Health', 'Household', 'Life', 'Motor', 'Work'],
-#                                      [len(health_reversals_df),
-#                                       len(household_reversals_df),
-#                                       len(life_reversals_df),
-#                                       len(motor_reversals_df),
-#                                       len(work_reversals_df)])),
-#                             columns=['Premium', 'Reversals'])
-# reversals_df.set_index('Premium', inplace=True)
-# reversals_df
-# reversals_df.plot(kind='pie', subplots=True, autopct='%1.1f%%')
-#
-# # Most of the reversals are from: Household, Life and Work premiums.
-#
-# # Append all reversals
-# reversals_df = health_reversals_df.append(household_reversals_df)
-# reversals_df.append(life_reversals_df)
-# reversals_df.append(motor_reversals_df)
-# reversals_df.append(work_reversals_df)
-#
-# #flag clients with reversals, because they will require a totally different marketing treatment
-# df.shape    # (9964, 13)
-#
-# # df.drop(df[df['health_premiums'] < 0].index, inplace=True)
-# # df.drop(df[df['life_premiums'] < 0].index, inplace=True)
-# # df.drop(df[df['work_premiums'] < 0].index, inplace=True)
-# # df.drop(df[df['motor_premiums'] < 0].index, inplace=True)
-# # df.drop(df[df['household_premiums'] < 0].index, inplace=True)
-# # df.shape    # (7811, 13): 2153 customers have reversal condition
-#
-# del health_reversals_df, household_reversals_df, life_reversals_df, motor_reversals_df, work_reversals_df
-#
-# # ----------- 9. Check the CMV and CAC variables:
-# # CMV: Customer Monetary Value. CAC: Customer Acquisition Cost
-# # Plotting CMV
-# sns.distplot(df['customer_monetary_value'], hist=True, kde=True, label='CMV')
-# plt.legend(prop={'size': 12})
-# plt.title('Customer Monetary Value distribution')
-# plt.xlabel('CMV (EUR)')
-# plt.ylabel('Density')
-# plt.show()
-# plt.clf()
-#
-# # Plotting CAC
-# sns.distplot(df['cust_acq_cost'], hist=True, kde=True, label='CAC')
-# plt.legend(prop={'size': 12})
-# plt.title('Customer Acquisition Cost distribution')
-# plt.xlabel('CAC (EUR)')
-# plt.ylabel('Density')
-# plt.show()
-# plt.clf()
-# df.shape    # 7811 Customers
-# # After looking at the CAC histogram is possible to say that CAC > 120k are outliers
-# High_CAC = df[df['cust_acq_cost'] > 120000]
-# # df.drop(df[df['cust_acq_cost'] > 120000].index, inplace=True)
-# # df.shape    # 7804 Customers. Just 7 Customers with High CAC
-#
-# # The same happen to CMV values, all customers with CMV > 3k will be considered outliers
-# High_CMV = df[df['customer_monetary_value'] > 3000]
-# # df.drop(df[df['customer_monetary_value'] > 3000].index, inplace=True)
-# # df.shape    # 7803 Customers. Just 1 Customer with High CMV (The special one)
-#
-# # Now, let's plot CAC vs CMV for each customer to see if there's some trend:
-# sns.scatterplot(x=df['cust_acq_cost'],
-#                 y=df['customer_monetary_value'], data=df)
-# plt.show()
-# # Just looking at these 2 variables, there's no a straight trend, but a positive trend.
-# # Which implies, that the company invest more on gaining or maintaining customers with high salaries
-#
-# # --------------CR vs PWR-----
-# # CR: Claim Rate. PWR: Premium Wage Ratio
-# # We already check for outliers on claim_rate column, but not in premium_wage_ratio
-# sns.distplot(df['premium_wage_ratio'])
-# # It seems there are no big outliers on premium_wage_ratio...
-#
-# # Now, let's plot CAC vs CMV for each customer to see if there's some trend:
-# sns.scatterplot(x=df['premium_wage_ratio'],
-#                 y=df['claims_rate'], data=df)
-# plt.show()
-
-# Clustering can be performed using those two variables
+# Standardize the data after dropping the outliers
 scaler = StandardScaler()
 X_std = scaler.fit_transform(df)
 X_std_df = pd.DataFrame(X_std, columns=df.columns)
 
+# Display box-plots again without outliers
+boxplot_all_columns(X_std, qtl_1, qtl_2)
+
+# For the following plotting part, it's necessary to use both "df_cat" and "df"
+# It's also necessary to have the same customers on both data frames.
+# So let's merge df_cat to df to keeping just the customers from df (without outliers)
+# Redefining df_cat (without outliers):
+df.shape        # 9893 customers
+df_cat.shape    # 9985 customers, 92 customers more on df_cat
+
+# So there were 92 outliers according to IQR(5th, 95th) criteria
+
+df_cat = pd.merge(df['gross_monthly_salary'], df_cat,
+                  left_on='Customer Identity', right_on='Customer Identity', how='left')
+df_cat = df_cat.drop(['gross_monthly_salary'], axis=1)
+df_cat.shape    # 9893 customers, the same as df
 
 
-# --------------K-modes-----
-# separate df into engage and consume
-df_Engage = df_cat.join(df['gross_monthly_salary'])
-len(df_Engage)
-df_Engage.dtypes
-df_Engage.isnull().sum()
-# Plotting 'gross_monthly_salary' before converting to categorical
-# just to see the range and determine the bins
-plt.figure()
-sns.distplot(df_Engage['gross_monthly_salary'])
-plt.savefig('salary_histogram.png')
+#-------- Re-Scale the data before plotting -------------
+# Re-scale df
+scaler.inverse_transform(X=X_std_df)
+df = pd.DataFrame(scaler.inverse_transform(X=X_std_df),
+                  columns=df.columns, index=df.index)
 
-# Oh! There are a few people with a really high salary
-# The bin will be 1000 (1k), and the salaries above 6k will be considered outliers.
-# The rows that contains those individuals will be store into this data frame:
-salary_outliers = df_Engage[df_Engage['gross_monthly_salary'] > 6000]
-# Check the shape of this data frame
-salary_outliers.head()  # Ja! just 2 guys above $6k. Messi and CR7
+#########################################################
+# ------------------- Plotting variables ----------------
+#########################################################
+df.columns
 
-# df_Engage = df_Engage[df_Engage['gross_monthly_salary'] <= 6000]
-# df_Engage.shape  # 9985 individuals below $6k
+# Plot variables of df to get more insights about the customers and the business
+# ----------- 1. Pie chart for number of customers by region (geographic area):
+df_region = df_cat.groupby('geographic_area')['geographic_area'].count()
+color_palette_list = ["#4878D0", "#6ACC64", "#D65F5F", "#956CB4", "#D5BB67", "#82C6E2"]
 
-# Converting gross_monthly_salary into categorical variable, using bins
-df_Engage['salary_bin'] = pd.cut(df_Engage['gross_monthly_salary'],
-                                 [0, 1000, 2000, 3000, 4000,5000],
-                                 labels=['0-1k', '1k-2k', '2k-3k', '3k-4k', '4k-5k'])
-df_Engage.isnull().sum()
-# Drop 'gross_monthly_salary', since the goal is to perform K-modes
-df_Engage = df_Engage.drop('gross_monthly_salary', axis=1)
+fig, ax = plt.subplots()
+plt.rcParams['font.sans-serif'] = 'Arial'
+plt.rcParams['font.family'] = 'sans-serif'
+plt.rcParams['text.color'] = '#909090'
+plt.rcParams['axes.labelcolor'] = '#909090'
+plt.rcParams['xtick.color'] = '#909090'
+plt.rcParams['ytick.color'] = '#909090'
+plt.rcParams['font.size'] = 12
+labels = [df_region.index[0], df_region.index[1], df_region.index[2], df_region.index[3]]
+counts = [df_region[0], df_region[1], df_region[2], df_region[3]]
+explode = (0.1, 0.1, 0.1, 0.1)
 
-# Take a look at the new df_Engage full categorical
-df_Engage.head()
-df_Engage['salary_bin'] = df_Engage['salary_bin'].astype(str)
-df_Engage.dtypes
+
+def func(pct, allvals):
+    absolute = int(pct / 100. * np.sum(allvals))
+    return "{:.1f}%\n({:,})".format(pct, absolute)
+
+ax.pie(counts, explode=explode,
+       colors=color_palette_list[0:4], autopct=lambda pct: func(pct, df_region),
+       shadow=False, startangle=0,
+       pctdistance=1.2, labeldistance=1.1)
+ax.axis('equal')
+ax.legend(labels, loc='best', title="Region")
+ax.set_title("Number of customers by geographic area")
+plt.show()
+
+del df_region, color_palette_list, labels, counts, explode
+
+# ----------- 2. Pie chart for number of customers by education level:
+df_educ = df_cat.groupby('edu_desc')['edu_desc'].count()
+color_palette_list = ["#4878D0", "#6ACC64", "#D65F5F", "#956CB4", "#D5BB67", "#82C6E2"]
+
+fig, ax = plt.subplots()
+plt.rcParams['font.sans-serif'] = 'Arial'
+plt.rcParams['font.family'] = 'sans-serif'
+plt.rcParams['text.color'] = '#909090'
+plt.rcParams['axes.labelcolor'] = '#909090'
+plt.rcParams['xtick.color'] = '#909090'
+plt.rcParams['ytick.color'] = '#909090'
+plt.rcParams['font.size'] = 12
+labels = [df_educ.index[0], df_educ.index[1], df_educ.index[2], df_educ.index[3]]
+counts = [df_educ[0], df_educ[1], df_educ[2], df_educ[3]]
+explode = (0.1, 0.1, 0.1, 0.1)
+
+
+def func(pct, allvals):
+    absolute = int(pct / 100. * np.sum(allvals))
+    return "{:.1f}%\n({:,})".format(pct, absolute)
+
+
+ax.pie(counts, explode=explode,
+       colors=color_palette_list[0:4], autopct=lambda pct: func(pct, df_educ),
+       shadow=False, startangle=45,
+       pctdistance=1.2, labeldistance=1.1)
+ax.axis('equal')
+ax.legend(labels, loc='best', title="Education")
+ax.set_title("Number of customers by education level")
+plt.show()
+
+del df_educ, color_palette_list, labels, counts, explode
+
+# ----------- 4. Histogram for salary:
+sns.distplot(df['gross_monthly_salary'], kde=False, color='green', bins=20)
+plt.title('Gross Monthly Salary', fontsize=16)
+plt.xlabel('Customers salaries (EUR)', fontsize=14)
+plt.ylabel('Frequency', fontsize=16)
+plt.show()
+
+# ----------- 4. Density curves for salary by each education level:
+# Typically, high salaries are related with high levels of education.
+# Let's plot a Density curve of salary for each education level to check the distributions
+
+# Auxiliary df for education levels and salaries:
+df_educ = pd.merge(df['gross_monthly_salary'], df_cat['edu_desc'],
+                   left_on='Customer Identity',
+                   right_on='Customer Identity',
+                   how='left')
+# df_educ.shape
+B_df = df_educ[df_educ.edu_desc == 'Basic']
+H_df = df_educ[df_educ.edu_desc == 'High School']
+D_df = df_educ[df_educ.edu_desc == 'BSc/MSc']
+P_df = df_educ[df_educ.edu_desc == 'PhD']
+
+sns.distplot(B_df['gross_monthly_salary'], hist=False, kde=True, label='Basic')
+sns.distplot(H_df['gross_monthly_salary'], hist=False, kde=True, label='High School')
+sns.distplot(D_df['gross_monthly_salary'], hist=False, kde=True, label='BSc/MSc')
+sns.distplot(P_df['gross_monthly_salary'], hist=False, kde=True, label='PhD')
+
+# Plot formatting
+plt.legend(prop={'size': 14})
+plt.title('Salary distribution for each education level', size=16)
+plt.xlabel('Gross Monthly Salary (EUR)', size=14)
+plt.ylabel('Density', size=14)
+plt.show()
+
+# Just the clients with Basic education has a low, skewed salary density
+# The other three are homogeneously dense distributed between 0.9 k and 4.5 k (EUR)
+del df_educ, B_df, H_df, D_df, P_df
+
+# ----------- 5. Density curve for policy age:
+# Check the distribution of this variable individually:
+sns.distplot(df['cust_pol_age'], kde=False)
+plt.title('Policy age', fontsize=18)
+plt.xlabel('Customer policy age (years)', fontsize=16)
+plt.ylabel('Frequency', fontsize=16)
+plt.show()
+
+# This Histogram shows the behavior of customer acquisition by
+# the insurance company over time. It explicitly shows a
+# constant distribution on the policy age for customers.
+# Which means that the company acquired the same quantity of customers
+# each year: 420. Except, for the year 1983 (2016 - 33 years),
+# when the company gained 870 customers.
+# Therefore, in absolute terms, the company always keep the same quantity of customers.
+
+# ----------- 5. Sum of Premiums by LOB by Claim Rate ()
+# Distribution of Claim Rate variable
+sns.distplot(df['claims_rate'])
+
+# Auxiliary df for plotting:
+color_palette_list = ["#4878D0", "#6ACC64", "#D65F5F", "#956CB4", "#D5BB67", "#82C6E2"]
+color_palette_list = ["#956CB4", "#6ACC64", "#4878D0", "#D65F5F", "#D5BB67"]
+claim_prem_df = df[['motor_premiums',
+                    'household_premiums',
+                    'health_premiums',
+                    'life_premiums',
+                    'work_premiums',
+                    'claims_rate']]
+
+# Since the rates can variate too much on the decimals, let's create segments
+claim_prem_df['claims_bin'] = pd.cut(claim_prem_df['claims_rate'],
+                                     [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5],
+                                     labels=['0-10%', '10-20%', '20-30%', '30-40%', '40-50%', '50-60%', '60-70%', '70-80%',
+                                             '80-90%', '90-100%', '100-110%', '110-120%', '120-130%', '130-140%', '140-150%'])
+claim_prem_df = claim_prem_df.drop('claims_rate', axis=1)
+# Group by claim rate  bin and sum the premiums
+claim_prem_df.groupby('claims_bin').sum().plot.bar(stacked=True,
+                                                   width=0.92,
+                                                   colors=color_palette_list)
+# Plot formatting
+plt.legend(prop={'size': 12}, loc='best')
+plt.title('Sum of Premiums by claims rate and type of Premium')
+plt.xlabel('Claim Rate')
+plt.ylabel('Premiums (EUR)')
+plt.show()
+
+
+# Conclude something
+
+del claim_prem_df, color_palette_list
+
+# ----------- 6. Pie chart for sum of premiums by LOB:
+df_premium = df[['motor_premiums',
+                 'household_premiums',
+                 'health_premiums',
+                 'life_premiums',
+                 'work_premiums']]
+
+df_premium = pd.melt(df_premium, var_name='Premium', value_name='Value')
+
+df_premium = df_premium.groupby('Premium')['Value'].sum()
+color_palette_list = ["#4878D0", "#6ACC64", "#D65F5F", "#956CB4", "#D5BB67", "#82C6E2"]
+
+fig, ax = plt.subplots()
+plt.rcParams['font.sans-serif'] = 'Arial'
+plt.rcParams['font.family'] = 'sans-serif'
+plt.rcParams['text.color'] = '#909090'
+plt.rcParams['axes.labelcolor'] = '#909090'
+plt.rcParams['xtick.color'] = '#909090'
+plt.rcParams['ytick.color'] = '#909090'
+plt.rcParams['font.size'] = 12
+labels = [df_premium.index[0], df_premium.index[1], df_premium.index[2], df_premium.index[3], df_premium.index[4]]
+counts = [df_premium[0], df_premium[1], df_premium[2], df_premium[3], df_premium[4]]
+explode = (0.1, 0.1, 0.1, 0.1, 0.1)
+
+
+def func(pct, allvals):
+    absolute = int(pct / 100. * np.sum(allvals))
+    return "{:.1f}%\n({:,})".format(pct, absolute)
+
+
+ax.pie(counts, explode=explode,
+       colors=color_palette_list[0:5], autopct=lambda pct: func(pct, df_premium),
+       shadow=False, startangle=0,
+       pctdistance=1.2, labeldistance=1.3)
+ax.axis('equal')
+ax.legend(labels, loc='best', title="Premium")
+ax.set_title("Sum of Premiums by LOB")
+plt.show()
+
+
+del df_premium, color_palette_list, labels, counts, explode
+
+# ----------- 8. Count of customers by LOB:
+df_premium = df[['motor_premiums',
+                 'household_premiums',
+                 'health_premiums',
+                 'life_premiums',
+                 'work_premiums']]
+
+df_premium = pd.melt(df_premium, var_name='Premium', value_name='Value')
+df_premium.head()
+
+df_premium = df_premium[df_premium['Value'] > 0].groupby('Premium')['Value'].count()
+
+color_palette_list = ["#4878D0", "#6ACC64", "#D65F5F", "#956CB4", "#D5BB67", "#82C6E2"]
+
+bar_plot = sns.barplot(x=df_premium.index,
+                       y=df_premium.values,
+                       color=color_palette_list[2])
+
+# Create labels
+label = [df_premium.iloc[0],
+         df_premium.iloc[1],
+         df_premium.iloc[2],
+         df_premium.iloc[3],
+         df_premium.iloc[4]]
+
+# Text on the top of each barplot
+for i in range(len(df_premium)):
+    plt.text(x=df_premium[i] - 0.5, y=df_premium.iloc[i] + 0.1, s=label[i], size=6)
+
+plt.title('Number of customers with positive Premiums')
+plt.show()
+
+del df_premium, color_palette_list, bar_plot, label
+
+# ----------- 9. Check the numbers of reversals:
+# Add a column for customers that are leaving the company
+# Negative values in any of the premiums.
+
+health_reversals_df = df[df['health_premiums'] < 0]
+household_reversals_df = df[df['household_premiums'] < 0]
+life_reversals_df = df[df['life_premiums'] < 0]
+motor_reversals_df = df[df['motor_premiums'] < 0]
+work_reversals_df = df[df['work_premiums'] < 0]
+
+# Show the number of reversal by premium
+reversals_df = pd.DataFrame(list(zip(['Health', 'Household', 'Life', 'Motor', 'Work'],
+                                     [len(health_reversals_df),
+                                      len(household_reversals_df),
+                                      len(life_reversals_df),
+                                      len(motor_reversals_df),
+                                      len(work_reversals_df)])),
+                            columns=['Premium', 'Reversals'])
+reversals_df.set_index('Premium', inplace=True)
+reversals_df
+
+color_palette_list = ["#4878D0", "#6ACC64", "#D65F5F", "#956CB4", "#D5BB67", "#82C6E2"]
+
+fig, ax = plt.subplots()
+plt.rcParams['font.sans-serif'] = 'Arial'
+plt.rcParams['font.family'] = 'sans-serif'
+plt.rcParams['text.color'] = '#909090'
+plt.rcParams['axes.labelcolor'] = '#909090'
+plt.rcParams['xtick.color'] = '#909090'
+plt.rcParams['ytick.color'] = '#909090'
+plt.rcParams['font.size'] = 12
+labels = [reversals_df.index[1], reversals_df.index[0], reversals_df.index[2], reversals_df.index[3]]
+counts = [reversals_df.iloc[0], reversals_df.iloc[1], reversals_df.iloc[2], reversals_df.iloc[3]]
+explode = (0.1, 0.1, 0.1, 0.1)
+
+
+def func(pct, allvals):
+    absolute = int(pct / 100. * np.sum(allvals))
+    return "{:.1f}%\n({:,})".format(pct, absolute)
+
+ax.pie(counts, explode=explode,
+       colors=color_palette_list[0:4], autopct=lambda pct: func(pct, reversals_df),
+       shadow=False, startangle=30,
+       pctdistance=1.2, labeldistance=1.2)
+ax.axis('equal')
+ax.legend(labels, loc='best', title="Premium")
+ax.set_title("Number of customers with reversal condition")
+plt.show()
+# reversals_df.plot(kind='pie', subplots=True, autopct='%1.1f%%')
+del color_palette_list, labels, counts, explode
+
+# Most of the reversals are from: Household, Life and Work premiums.
+# Append all reversals
+reversals_df = health_reversals_df.append(household_reversals_df)
+reversals_df.append(life_reversals_df)
+reversals_df.append(motor_reversals_df)
+reversals_df.append(work_reversals_df)
+# 2153 reversal condition
+
+del health_reversals_df, household_reversals_df, life_reversals_df, motor_reversals_df, work_reversals_df
+
+# ----------- 10. Check the CMV and CAC variables:
+# CMV: Customer Monetary Value. CAC: Customer Acquisition Cost
+# Plotting CMV
+sns.distplot(df['customer_monetary_value'], hist=True, kde=True, label='CMV')
+plt.legend(prop={'size': 12})
+plt.title('Customer Monetary Value distribution')
+plt.xlabel('CMV (EUR)')
+plt.ylabel('Density')
+plt.show()
+
+# Plotting CAC
+sns.distplot(df['cust_acq_cost'], hist=True, kde=True, label='CAC')
+plt.legend(prop={'size': 12})
+plt.title('Customer Acquisition Cost distribution')
+plt.xlabel('CAC (EUR)')
+plt.ylabel('Density')
+plt.show()
+
+# Now, let's plot CAC vs CMV for each customer to see if there's some trend:
+sns.jointplot(x=df['cust_acq_cost'],
+              y=df['customer_monetary_value'],
+              data=df)
+
+ax.set(xlabel='Customer Monetary Value (EUR)', ylabel='Customer Acquisition Cost (EUR)')
+plt.show()
+
+# Just looking at these 2 variables, there's no a straight trend, but a positive trend.
+# Which implies, that the company invest more on gaining or maintaining customers with high salaries
+
+# Clustering can be performed using those two variables
+
+# --------------APbC vs PWR-----
+# APbC: Amount paid by the company, last 2 years. PWR: Premium Wage Ratio
+sns.distplot(df['premium_wage_ratio'])
+plt.show
+# Now, let's plot CR vs PWR for each customer to see if there's some trend:
+sns.jointplot(x=df['premium_wage_ratio'],
+              y=df['amt_paidby_comp_2yrs'], data=df,
+              color='green')
+plt.show
+
+# Total amount paid by the insurance companyÑ
+df['amt_paidby_comp_2yrs'].sum()
 
 # ------ Count-plot for customers by salary_bin and education level
+# Define a new data frame with only categorical values for this part
+df_Engage = df_cat.join(df['gross_monthly_salary'])
+# Converting gross_monthly_salary into categorical variable, using bins
+df_Engage['salary_segment'] = pd.cut(df_Engage['gross_monthly_salary'],
+                                 [0, 1000, 2000, 3000, 4000, 5000, 6000],
+                                 labels=['0-1k', '1k-2k', '2k-3k', '3k-4k', '4k-5k', '5k-6k'])
+
+# Drop 'gross_monthly_salary'
+df_Engage = df_Engage.drop('gross_monthly_salary', axis=1)
+
+df_Engage.dtypes
 plt.figure()
-ax = sns.countplot(x=df_Engage['salary_bin'], hue='edu_desc', data=df_Engage,
-                   order=df_Engage['salary_bin'].value_counts().index,
+ax = sns.countplot(x=df_Engage['salary_segment'], hue='edu_desc', data=df_Engage,
+                   order=df_Engage['salary_segment'].value_counts().index,
                    hue_order=['Basic', 'High School', 'BSc/MSc', 'PhD'])
 plt.legend(loc='upper right')
 
@@ -913,7 +886,7 @@ for p in ax.patches:
                 (p.get_x() + p.get_width() / 2., p.get_height()),
                 ha='center', va='center', xytext=(0, 10), textcoords='offset points')
 
-plt.savefig('salary_bin_educ.png')
+plt.show()
 
 # Most of the customers belong to the '1k-2k', '2k-3k', '3k-4k' bins
 # Most of the customers education level is High School and BSc/MSc
@@ -923,32 +896,194 @@ plt.savefig('salary_bin_educ.png')
 # ------ Count-plot for customers by salary_bin and geographic_area
 plt.figure()
 
-df_plot = df_Engage.groupby(['salary_bin', 'geographic_area']).size().reset_index().pivot(columns='salary_bin',
+df_plot = df_Engage.groupby(['salary_segment', 'geographic_area']).size().reset_index().pivot(columns='salary_segment',
                                                                                           index='geographic_area',
                                                                                           values=0)
 df_plot.plot(kind='bar', stacked=True)
-
+plt.title('Count of customers by salary segment and by region', fontsize=14)
 # With this plot we can determine 3 things:
 # 1. There are more customers in region 4
 # 2. Region 2 is the region with less customers
 # 3. The proportion of salary ranges is almost homogeneous over all the regions
 
-plt.savefig('salary_bin_geo.png')
+plt.show()
 del df_plot
 
 # ------ Count-plot for customers by salary_bin and has_children
 plt.figure()
 
-df_plot = df_Engage.groupby(['salary_bin', 'has_children']).size().reset_index().pivot(columns='salary_bin',
-                                                                                       index='has_children', values=0)
+df_plot = df_Engage.groupby(['salary_segment', 'has_children']).size().reset_index().pivot(columns='salary_segment',
+                                                                                    index='has_children', values=0)
 ax = df_plot.plot(kind='bar', stacked=True)
 
 # With this plot we can determine 2 main things:
 # 1. There are more customers with children: 7000 has children and 3000 does not.
 # 2. The proportion of higher salaries is higher over the customers with no children.
 
-plt.savefig('salary_bin_children.png')
-del df_plot
+plt.show()
+del df_plot, df_Engage
+
+# Looking at the plots of categorical from the Engage data frame,
+# 1. The main variable in this data frame is salary.
+# 2. Age can be an important variable as well, but since a lot of the data is wrong
+# 	then is better not to trust in this variable.
+
+# -------------- Plotting correlation matrix
+# # Compute the correlation matrix
+corr = df.corr()
+
+# Set Up Mask To Hide Upper Triangle
+mask = np.zeros_like(corr, dtype=np.bool)
+mask[np.triu_indices_from(mask)] = True
+np.triu_indices_from(mask)
+mask[np.triu_indices_from(mask)] = True
+
+f, ax = plt.subplots(figsize=(10, 13))
+heatmap = sns.heatmap(corr,
+                      mask=mask,
+                      square=True,
+                      linewidths=0.5,
+                      cmap='coolwarm',
+                      cbar_kws={'shrink': 0.4,
+                                'ticks': [-1, -.5, 0, 0.5, 1]},
+                      vmin=-1,
+                      vmax=1,
+                      annot=True,
+                      annot_kws={'size': 10})
+# add the column names as labels
+ax.set_yticklabels(corr.columns, rotation=0)
+ax.set_xticklabels(corr.columns)
+sns.set_style({'xtick.bottom': True}, {'ytick.left': True})
+plt.show()
+del corr, mask, heatmap
+
+#########################################################
+# ------------------- Standardization ----------------
+#########################################################
+
+# We are now going to scale the data so we can do effective clustering of our variables
+# Standardize the data to have a mean of ~0 and a variance of 1
+scaler = StandardScaler()
+X_std = scaler.fit_transform(df)
+X_std_df = pd.DataFrame(X_std, columns=df.columns)
+
+
+# --------------------- Re-Scale the data ----------------
+# # Re-scale df
+# scaler.inverse_transform(X=X_std_df)
+# df = pd.DataFrame(scaler.inverse_transform(X=X_std_df),
+#                   columns=df.columns)
+
+#########################################################
+# ---------------------- Clustering --------------------
+#########################################################
+
+# Selecting the number of clusters with silhouette analysis
+# Reference:
+# https://scikit-learn.org/stable/auto_examples/cluster/plot_kmeans_silhouette_analysis.html
+def silhouette_analysis(df_in, n, m):
+    '''
+    Selecting the number of clusters with
+    silhouette analysis.
+    df_in = numerical data frame (should be normalized)
+    n = lowest number of cluster desired to analyse (n >=2 )
+    m = highest number of cluster desired to analyse (m is included)
+    m >= n
+    '''
+
+    range_n_clusters = list(range(n, m + 1))
+
+    for n_clusters in range_n_clusters:
+        # Create a subplot with 1 row and 2 columns
+        # One column for the silhouette plot and
+        # other column for the clustering plot
+        fig, (ax1) = plt.subplots(1, 1)
+        fig.set_size_inches(10, 7)
+
+        # The 1st subplot is the silhouette plot
+        # The silhouette coefficient can range within [-1, 1]
+        ax1.set_xlim([-1, 1])
+        # The (n_clusters+1)*10 is for inserting blank space between silhouette
+        # plots of individual clusters, to demarcate them clearly.
+        ax1.set_ylim([0, len(df_in) + (n_clusters + 1) * 10])
+
+        # Initialize the clusterer with n_clusters value and a random generator
+        # seed of 10 for reproducibility.
+        clusterer = KMeans(n_clusters=n_clusters, random_state=10)
+        cluster_labels = clusterer.fit_predict(df_in)
+
+        # The silhouette_score gives the average value for all the samples.
+        # This gives a perspective into the density and separation of the formed
+        # clusters
+        silhouette_avg = silhouette_score(df_in, cluster_labels)
+        print("For n_clusters =", n_clusters,
+              "The average silhouette_score is :", silhouette_avg)
+
+        # Compute the silhouette scores for each sample
+        sample_silhouette_values = silhouette_samples(df_in, cluster_labels)
+
+        y_lower = 10
+        for i in range(n_clusters):
+            # Aggregate the silhouette scores for samples belonging to
+            # cluster i, and sort them
+            ith_cluster_silhouette_values = \
+                sample_silhouette_values[cluster_labels == i]
+
+            ith_cluster_silhouette_values.sort()
+
+            size_cluster_i = ith_cluster_silhouette_values.shape[0]
+            y_upper = y_lower + size_cluster_i
+
+            color = cm.nipy_spectral(float(i) / n_clusters)
+            ax1.fill_betweenx(np.arange(y_lower, y_upper),
+                              0, ith_cluster_silhouette_values,
+                              facecolor=color, edgecolor=color, alpha=0.7)
+
+            # Label the silhouette plots with their cluster numbers at the middle
+            ax1.text(-0.05, y_lower + 0.5 * size_cluster_i, str(i))
+
+            # Compute the new y_lower for next plot
+            y_lower = y_upper + 10  # 10 for the 0 samples
+
+        ax1.set_title("The silhouette plot for the various clusters.")
+        ax1.set_xlabel("The silhouette coefficient values")
+        ax1.set_ylabel("Cluster label")
+
+        # The vertical line for average silhouette score of all the values
+        ax1.axvline(x=silhouette_avg, color="red", linestyle="--")
+
+        ax1.set_yticks([])  # Clear the yaxis labels / ticks
+        ax1.set_xticks([-0.1, 0, 0.2, 0.4, 0.6, 0.8, 1])
+
+        plt.suptitle(("Silhouette analysis for KMeans clustering on sample data "
+                      "with n_clusters = %d" % n_clusters),
+                     fontsize=14, fontweight='bold')
+
+    plt.show()
+# ------------------------------------------------------
+# Applying Silhouette Analysis function over normalized df
+silhouette_analysis(X_std, 2, 4)
+
+
+# ----------------------K-modes-------------------------
+# separate df into engage and consume
+df_Engage = df_cat.join(df['gross_monthly_salary'])
+len(df_Engage)
+df_Engage.dtypes
+df_Engage.isnull().sum()
+
+# Converting gross_monthly_salary into categorical variable, using bins
+df_Engage['salary_segment'] = pd.cut(df_Engage['gross_monthly_salary'],
+                                 [0, 1000, 2000, 3000, 4000, 5000, 6000],
+                                 labels=['0-1k', '1k-2k', '2k-3k', '3k-4k', '4k-5k', '5k-6k'])
+df_Engage.isnull().sum()
+# Drop 'gross_monthly_salary', since the goal is to perform K-modes
+df_Engage = df_Engage.drop('gross_monthly_salary', axis=1)
+
+# Take a look at the new df_Engage full categorical
+df_Engage.head()
+df_Engage['salary_segment'] = df_Engage['salary_segment'].astype(str)
+df_Engage.dtypes
 
 # Choosing K by comparing Cost against each K. Copied from:
 # https://www.kaggle.com/ashydv/bank-customer-clustering-k-modes-clustering
@@ -963,137 +1098,39 @@ plt.figure()
 plt.plot(y, cost)
 plt.savefig('K-mode_elbow.png')
 
-## ------ DM lab code for K-modes
+# ------ DM lab code for K-modes
 kmodes_clustering = KModes(n_clusters=3, init='Cao', n_init=50, verbose=1)
 clusters_cat = kmodes_clustering.fit_predict(df_Engage)
 
 pca = PCA(2)
 
 # Turn the dummified df into two columns with PCA
-plot_columns = pca.fit_transform(X_std_df.iloc[:,0:13])
+plot_columns = pca.fit_transform(X_std_df.iloc[:, 0:13])
 X_std_df.shape
 
-LABEL_COLOR_MAP = {0 : 'r',
-                   1 : 'k',
-                   2 : 'b'}
+LABEL_COLOR_MAP = {0: 'r',
+                   1: 'k',
+                   2: 'b'}
 
 fig, ax = plt.subplots()
 for c in np.unique(clusters_cat):
     ix = np.where(clusters_cat == c)
-    ax.scatter(plot_columns[:,1][ix], plot_columns[:,0][ix], c = LABEL_COLOR_MAP[c], label = kmodes_clustering.cluster_centroids_[c], s = 50, marker='.')
+    ax.scatter(plot_columns[:, 1][ix], plot_columns[:, 0][ix], c=LABEL_COLOR_MAP[c], label = kmodes_clustering.cluster_centroids_[c], s=50, marker='.')
 ax.legend()
 plt.show()
 
 # Print the cluster centroids
 print("The mode of each variable for each cluster:\n{}".format(kmodes_clustering.cluster_centroids_)) #This gives the mode of each variable for each cluster.
-df_cat_centroids = pd.DataFrame(kmodes_clustering.cluster_centroids_,
-                                   columns=df_Engage.columns)
+df_cat_centroids = pd.DataFrame(kmodes_clustering.cluster_centroids_, columns=df_Engage.columns)
 
 unique, counts = np.unique(kmodes_clustering.labels_, return_counts=True)
 cat_counts = pd.DataFrame(np.asarray((unique, counts)).T, columns=['Label', 'Number'])
 cat_centroids = pd.concat([df_Engage_centroids, cat_counts], axis=1)
 del cat_counts
 
-# I don't know how to interpret the results from K-modes
-# I can have 2 or 4 clusters, but I don't know how those can be useful
 
-# -------------- Plotting correlation matrix
-# # Compute the correlation matrix
-corr = df.corr()
 
-# Set Up Mask To Hide Upper Triangle
-mask = np.zeros_like(corr, dtype=np.bool)
-mask[np.triu_indices_from(mask)] = True
-np.triu_indices_from(mask)
-mask[np.triu_indices_from(mask)] = True
 
-f, ax = plt.subplots(figsize=(11, 15))
-heatmap = sns.heatmap(corr,
-                      mask=mask,
-                      square=True,
-                      linewidths=0.5,
-                      cmap='coolwarm',
-                      cbar_kws={'shrink': 0.4,
-                                'ticks': [-1, -.5, 0, 0.5, 1]},
-                      vmin=-1,
-                      vmax=1,
-                      annot=True,
-                      annot_kws={'size': 12})
-# add the column names as labels
-ax.set_yticklabels(corr.columns, rotation=0)
-ax.set_xticklabels(corr.columns)
-sns.set_style({'xtick.bottom': True}, {'ytick.left': True})
-plt.show()
-
-# References for detecting outliers:
-# https://www.dataquest.io/blog/tutorial-advanced-for-loops-python-pandas/
-# https://wellsr.com/python/python-create-pandas-boxplots-with-dataframes/
-# https://notebooks.ai/rmotr-curriculum/outlier-detection-using-boxplots-a89cd3ee
-# https://seaborn.pydata.org/examples/horizontal_boxplot.html
-
-# Get columns names
-X_std_df.columns
-
-# Set seaborn palette colors
-flatui = ["#9b59b6", "#3498db", "#95a5a6", "#e74c3c", "#34495e", "#2ecc71"]
-
-# Pair-plot just for products and customers salaries
-salary_premiums = X_std_df[['gross_monthly_salary',
-                            'total_premiums',
-                            'motor_premiums',
-                            'work_premiums',
-                            'health_premiums',
-                            'life_premiums',
-                            'household_premiums']]
-with sns.color_palette('Paired'):
-    sns.pairplot(data=salary_premiums,
-                 y_vars=['total_premiums',
-                         'motor_premiums',
-                         'work_premiums',
-                         'health_premiums',
-                         'life_premiums',
-                         'household_premiums'],
-                 x_vars=['gross_monthly_salary'],
-                 markers='x')
-    plt.show()
-
-# Pair-plot just for products and claims rate
-claims_premiums = X_std_df[['claims_rate',
-                            'total_premiums',
-                            'motor_premiums',
-                            'work_premiums',
-                            'health_premiums',
-                            'life_premiums',
-                            'household_premiums']]
-with sns.color_palette(flatui):
-    sns.pairplot(data=claims_premiums,
-                 y_vars=['total_premiums',
-                         'motor_premiums',
-                         'work_premiums',
-                         'health_premiums',
-                         'life_premiums',
-                         'household_premiums'],
-                 x_vars=['claims_rate'],
-                 markers='x')
-    plt.show()
-
-# Perform clustering over education and salary
-
-# Perform clustering over geography and salary
-
-# Perform clustering over life_premiums and has_children
-
-# Perform clustering over life_premiums and has_children
-
-# Perform clustering over policy_age and salary
-pol_age_salary = X_std_df[['cust_pol_age', 'gross_monthly_salary']]
-
-with sns.color_palette(flatui):
-    sns.pairplot(data=pol_age_salary,
-                 y_vars=['cust_pol_age'],
-                 x_vars=['gross_monthly_salary'],
-                 markers='1')
-    plt.show()
 
 # ## Experiment with alternative clustering techniques
 # variance zero cols must go

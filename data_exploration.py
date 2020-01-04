@@ -467,15 +467,15 @@ def IQR_drop_outliers(df_in, qtl_1, qtl_2):
     qtl_1 is the lower quantile use to drop the rows. Number between (0, 1)
     qtl_2 is the upper quantile use to drop the rows. Number between (0, 1)
     '''
-    Q1 = df_in.quantile(qtl_1)
-    Q3 = df_in.quantile(qtl_2)
-    IQR = Q3 - Q1
-    lower_range = Q1 - (1.5 * IQR)
-    upper_range = Q3 + (1.5 * IQR)
+    Q1 = df_in.quantile(0.25)
+    Q3 = df_in.quantile(0.75)
+    # IQR = Q3 - Q1
+    # lower_range = Q1 - (1.5 * IQR)
+    # upper_range = Q3 + (1.5 * IQR)
 
     # df_out is filtered with values within the quartiles boundaries
-    df_out = df_in[~((df_in < lower_range) | (df_in > upper_range)).any(axis=1)]
-    df_outliers = df_in[((df_in < lower_range) | (df_in > upper_range)).any(axis=1)]
+    df_out = df_in[~((df_in < Q1) | (df_in > Q3)).any(axis=1)]
+    df_outliers = df_in[((df_in < Q1) | (df_in > Q3)).any(axis=1)]
     return df_out, df_outliers
 
 

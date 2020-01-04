@@ -25,7 +25,13 @@ from kmodes.kmodes import KModes
 from sklearn import mixture
 from sklearn.metrics import silhouette_samples
 from sklearn.metrics import silhouette_score
+from sompy.sompy import SOMFactory
+from sompy.visualization.bmuhits import BmuHitsView
+from sompy.visualization.mapview import View2D
+from sompy.visualization.hitmap import HitMapView
+from sompy.visualization.plot_tools import plot_hex_map
 
+import logging
 
 # This is a summary of the labs sessions topics we’ve covered
 # Just to put checkmarks on the techniques we are using in this project:
@@ -34,7 +40,6 @@ from sklearn.metrics import silhouette_score
 # Session 2: query and join tables (sqlite3)
 # Session 3: explore data (describe, shape, info, unique, dtypes, sum, mean, head, tail, groupby, columns, iloc)
 # Session 4: continuation of session 3
-
 # Session 5 (Impute):
 #	from sklearn.impute import SimpleImputer
 # 	from sklearn.neighbors import KNeighborsClassifier
@@ -59,10 +64,13 @@ from sklearn.metrics import silhouette_score
 #	from sklearn import preprocessing
 #	le_status = preprocessing.LabelEncoder()
 
-# Session 9 (Kmeans, Silhouttes):
-#	elbow_plot function
-#	silhouette
-#	Kmeans
+
+# Session 12 (Self Organizing Map):
+#	from sompy.visualization.mapview import View2DPacked
+#	from sompy.visualization.mapview import View2D
+#	from sompy.visualization.bmuhits import BmuHitsView
+#	from sompy.visualization.hitmap import HitMapView
+
 
 # Session 10 (Hier. Clustering, K-modes):
 #	from scipy.cluster.hierarchy import dendrogram, linkage
@@ -72,7 +80,22 @@ from sklearn.metrics import silhouette_score
 #	import sklearn.metrics as sm
 # 	from kmodes.kmodes import KModes
 
-# Session 11 (Classification tree):
+
+# Session 9 (Kmeans, Silhouttes):
+#	elbow_plot function
+#	silhouette
+#	Kmeans
+
+# Session 13 (DB Scan & Mean Shift & Spectral):
+#	from sklearn.cluster import DBSCAN
+#	from sklearn import metrics
+#	from sklearn.cluster import MeanShift, estimate_bandwidth
+
+# Session 14 (GaussianMixture):
+#	from sklearn import mixture
+
+
+# Session 11 (Classification tree & KNN):
 #	from sklearn.model_selection import cross_val_score
 #	from sklearn import tree
 #	from sklearn.tree import DecisionTreeClassifier, plot_tree
@@ -81,19 +104,89 @@ from sklearn.metrics import silhouette_score
 #	from dtreeplt import dtreeplt
 #	import graphviz
 
-# Session 12 (Self Organizing Map):
-#	from sompy.visualization.mapview import View2DPacked
-#	from sompy.visualization.mapview import View2D
-#	from sompy.visualization.bmuhits import BmuHitsView
-#	from sompy.visualization.hitmap import HitMapView
 
-# Session 13 (DB Scan & Mean Shift):
-#	from sklearn.cluster import DBSCAN
-#	from sklearn import metrics
-#	from sklearn.cluster import MeanShift, estimate_bandwidth
+# Selecting the number of clusters with silhouette analysis
+# Reference:
+# https://scikit-learn.org/stable/auto_examples/cluster/plot_kmeans_silhouette_analysis.html
+def silhouette_analysis(df_in, n, m):
+    '''
+    Selecting the number of clusters with
+    silhouette analysis.
+    df_in = numerical data frame (should be normalized)
+    n = lowest number of cluster desired to analyse (n >=2 )
+    m = highest number of cluster desired to analyse (m is included)
+    m >= n
+    '''
 
-# Session 14 (GaussianMixture):
-#	from sklearn import mixture
+    range_n_clusters = list(range(n, m + 1))
+
+    for n_clusters in range_n_clusters:
+        # Create a subplot with 1 row and 2 columns
+        # One column for the silhouette plot and
+        # other column for the clustering plot
+        fig, (ax1) = plt.subplots(1, 1)
+        fig.set_size_inches(10, 7)
+
+        # The 1st subplot is the silhouette plot
+        # The silhouette coefficient can range within [-1, 1]
+        ax1.set_xlim([-1, 1])
+        # The (n_clusters+1)*10 is for inserting blank space between silhouette
+        # plots of individual clusters, to demarcate them clearly.
+        ax1.set_ylim([0, len(df_in) + (n_clusters + 1) * 10])
+
+        # Initialize the clusterer with n_clusters value and a random generator
+        # seed of 10 for reproducibility.
+        clusterer = KMeans(n_clusters=n_clusters, random_state=10)
+        cluster_labels = clusterer.fit_predict(df_in)
+
+        # The silhouette_score gives the average value for all the samples.
+        # This gives a perspective into the density and separation of the formed
+        # clusters
+        silhouette_avg = silhouette_score(df_in, cluster_labels)
+        print("For n_clusters =", n_clusters,
+              "The average silhouette_score is :", silhouette_avg)
+
+        # Compute the silhouette scores for each sample
+        sample_silhouette_values = silhouette_samples(df_in, cluster_labels)
+
+        y_lower = 10
+        for i in range(n_clusters):
+            # Aggregate the silhouette scores for samples belonging to
+            # cluster i, and sort them
+            ith_cluster_silhouette_values = \
+                sample_silhouette_values[cluster_labels == i]
+
+            ith_cluster_silhouette_values.sort()
+
+            size_cluster_i = ith_cluster_silhouette_values.shape[0]
+            y_upper = y_lower + size_cluster_i
+
+            color = cm.nipy_spectral(float(i) / n_clusters)
+            ax1.fill_betweenx(np.arange(y_lower, y_upper),
+                              0, ith_cluster_silhouette_values,
+                              facecolor=color, edgecolor=color, alpha=0.7)
+
+            # Label the silhouette plots with their cluster numbers at the middle
+            ax1.text(-0.05, y_lower + 0.5 * size_cluster_i, str(i))
+
+            # Compute the new y_lower for next plot
+            y_lower = y_upper + 10  # 10 for the 0 samples
+
+        ax1.set_title("The silhouette plot for the various clusters.")
+        ax1.set_xlabel("The silhouette coefficient values")
+        ax1.set_ylabel("Cluster label")
+
+        # The vertical line for average silhouette score of all the values
+        ax1.axvline(x=silhouette_avg, color="red", linestyle="--")
+
+        ax1.set_yticks([])  # Clear the yaxis labels / ticks
+        ax1.set_xticks([-0.1, 0, 0.2, 0.4, 0.6, 0.8, 1])
+
+        plt.suptitle(("Silhouette analysis for KMeans clustering on sample data "
+                      "with n_clusters = %d" % n_clusters),
+                     fontsize=14, fontweight='bold')
+
+    plt.show()
 
 
 # -------------- Querying the database file
@@ -253,9 +346,10 @@ print("Original data frame length:",
 
 # making new data frame 'null_values' with dropped NA values
 null_df = combined_df[combined_df.isna().any(axis=1)]
-
 # Drop rows with NA values
 df = combined_df.dropna(axis=0, how='any')
+combined_df.shape
+df.shape
 df.isnull().sum()
 # Defining each column type value with a  dictionary
 type_dict = {
@@ -391,19 +485,20 @@ df['health_premiums'] = df['health_premiums'] / df['total_premiums']
 df['life_premiums'] = df['life_premiums'] / df['total_premiums']
 df['work_premiums'] = df['work_premiums'] / df['total_premiums']
 
-# # # Calculating the acquisition cost assuming claims_rate constant last 2 yrs
-# df['cust_acq_cost'] = (df['total_premiums']-df['claims_rate'] * df['total_premiums']) * df['cust_pol_age'] - df['customer_monetary_value']
+# # # Calculating the acquisition cost assuming claims_rate is the same as that over thrconstant last 2 yrs
+df['cust_acq_cost'] = (df['total_premiums']-df['claims_rate'] * df['total_premiums']) * df['cust_pol_age'] - df['customer_monetary_value']
+# # Calculate 'Amount paid by the insurance company' (
+#df['amt_paidby_comp'] = df['claims_rate'] * df['total_premiums']
+df.drop(['claims_rate'], axis=1, inplace=True)
+df.drop('customer_monetary_value',axis=1,inplace=True)
+
 
 # For 'claims_rate' (CR) it's possible to clear the 'Amount paid by the insurance company'
 # claims_rate = (Amount paid by the insurance company)/(Total Premiums)
 # Therefore:(Amount paid by the insurance company) = (claims_rate)*(Total Premiums)
 # where: (Total Premiums) can be calculated prior, as the sum of:
 # 'motor_premiums', 'household_premiums', 'health_premiums',
-# 'life_premiums', 'work_premiums
-
-# # Calculate 'Amount paid by the insurance company' (
-#df['amt_paidby_comp_2yrs'] = df['claims_rate'] * df['total_premiums']*2
-#df.drop(['claims_rate'], axis=1, inplace=True)
+# 'life_premiums', 'work_premium
 
 # Calculate the premium/wage proportion
 df['premium_wage_ratio'] = df['total_premiums'] / (df['gross_monthly_salary'] * 12)
@@ -427,8 +522,8 @@ def outliers_hist(df_in):
             i = i + 1
     fig.savefig("outliers_hist.png")
 
-# Apply histogram function to the entire data frame
-outliers_hist(df.drop(categorical_cols, axis=1))
+# # Apply histogram function to the entire data frame
+# outliers_hist(df.drop(categorical_cols, axis=1))
 
 #########################################################
 # ------------------- Excluding outliers ----------------
@@ -454,15 +549,11 @@ def IQR_drop_outliers(df_in, qtl_1, qtl_2):
     qtl_1 is the lower quantile use to drop the rows. Number between (0, 1)
     qtl_2 is the upper quantile use to drop the rows. Number between (0, 1)
     '''
-    Q1 = df_in.quantile(qtl_1)
-    Q3 = df_in.quantile(qtl_2)
-    # IQR = Q3 - Q1
-    # lower_range = Q1 - (1.5 * IQR)
-    # upper_range = Q3 + (1.5 * IQR)
-
+    lower_range = df_in.quantile(qtl_1)
+    upper_range = df_in.quantile(qtl_2)
     # df_out is filtered with values within the quartiles boundaries
-    df_out = df_in[~((df_in < Q1) | (df_in > Q3)).any(axis=1)]
-    df_outliers = df_in[((df_in < Q1) | (df_in > Q3)).any(axis=1)]
+    df_out = df_in[~((df_in < lower_range) | (df_in > upper_range)).any(axis=1)]
+    df_outliers = df_in[((df_in < lower_range) | (df_in > upper_range)).any(axis=1)]
     return df_out, df_outliers
 
 
@@ -474,11 +565,11 @@ scaler = StandardScaler()
 X_std = scaler.fit_transform(df.drop(categorical_cols, axis=1))
 X_std_df = pd.DataFrame(X_std, columns=df.drop(categorical_cols, axis=1).columns)
 
-qtl_1 = 0.05  # lower boundary
-qtl_2 = 0.95  # upper boundary
+qtl_1 = 0.01  # lower boundary
+qtl_2 = 0.99  # upper boundary
 
 # Apply box-plot function to the selected columns
-boxplot_all_columns(X_std_df, qtl_1, qtl_2)
+# boxplot_all_columns(X_std_df, qtl_1, qtl_2)
 
 # There are outliers, so let's remove them with the 'IQR_drop_outliers' function
 df, df_outliers = IQR_drop_outliers(df, qtl_1, qtl_2)
@@ -489,7 +580,7 @@ X_std = scaler.fit_transform(df.drop(categorical_cols, axis=1))
 X_std_df = pd.DataFrame(X_std, columns=df.drop(categorical_cols, axis=1).columns)
 
 # Plot without outliers
-boxplot_all_columns(X_std_df, qtl_1, qtl_2)
+# boxplot_all_columns(X_std_df, qtl_1, qtl_2)
 
 #Allocate the categorical columns to a new Dataframe
 
@@ -553,7 +644,7 @@ for c in np.unique(clusters_cat):
     ax.scatter(plot_columns[:,1][ix], plot_columns[:,0][ix], c = LABEL_COLOR_MAP[c], label = kmodes_clustering.cluster_centroids_[c], s = 50, marker='.')
 ax.legend()
 fig.savefig("Kdo")
-plt.show()
+# plt.show()
 
 # Print the cluster centroids
 print("The mode of each variable for each cluster:\n{}".format(kmodes_clustering.cluster_centroids_)) #This gives the mode of each variable for each cluster.
@@ -580,7 +671,7 @@ for p in ax.patches:
                 ha='center', va='center', xytext=(0, 10), textcoords='offset points')
 
 plt.savefig('salary_bin_educ.png')
-plt.show()
+# plt.show()
 # Most of the customers belong to the '1k-2k', '2k-3k', '3k-4k' bins
 # Most of the customers education level is High School and BSc/MSc
 # There is no correlation between education level and salary
@@ -600,8 +691,8 @@ df_plot.plot(kind='bar', stacked=True)
 # 3. The proportion of salary ranges is almost homogeneous over all the regions
 
 plt.savefig('salary_bin_geo.png')
+# plt.show()
 del df_plot
-
 # ------ Count-plot for customers by salary_bin and has_children
 plt.figure()
 
@@ -613,7 +704,7 @@ ax = df_plot.plot(kind='bar', stacked=True)
 # 1. There are more customers with children: 7000 has children and 3000 does not.
 # 2. The proportion of higher salaries is higher over the customers with no children.
 
-plt.show()
+# plt.show()
 del df_plot, df_Engage
 
 # Looking at the plots of categorical from the Engage data frame,
@@ -646,7 +737,7 @@ heatmap = sns.heatmap(corr,
 ax.set_yticklabels(corr.columns, rotation=0)
 ax.set_xticklabels(corr.columns)
 sns.set_style({'xtick.bottom': True}, {'ytick.left': True})
-plt.show()
+# plt.show()
 del corr, mask, heatmap
 
 #########################################################
@@ -670,88 +761,41 @@ X_std_df = pd.DataFrame(X_std, columns=df.columns)
 # ---------------------- Clustering --------------------
 #########################################################
 
-# Selecting the number of clusters with silhouette analysis
-# Reference:
-# https://scikit-learn.org/stable/auto_examples/cluster/plot_kmeans_silhouette_analysis.html
-def silhouette_analysis(df_in, n, m):
-    '''
-    Selecting the number of clusters with
-    silhouette analysis.
-    df_in = numerical data frame (should be normalized)
-    n = lowest number of cluster desired to analyse (n >=2 )
-    m = highest number of cluster desired to analyse (m is included)
-    m >= n
-    '''
+#SOM
 
-    range_n_clusters = list(range(n, m + 1))
+sm = SOMFactory().build(data = X_std,
+               mapsize=(10,10),
+               normalization = 'var',
+               initialization = 'random',#'random', 'pca'
+               component_names = X_std_df.columns,
+               lattice = 'hexa',#'rect','hexa'
+               training = 'batch')#'seq','batch'
 
-    for n_clusters in range_n_clusters:
-        # Create a subplot with 1 row and 2 columns
-        # One column for the silhouette plot and
-        # other column for the clustering plot
-        fig, (ax1) = plt.subplots(1, 1)
-        fig.set_size_inches(10, 7)
+sm.train(n_job=10,
+         verbose='info',
+         train_rough_len=30,
+         train_finetune_len=100)
 
-        # The 1st subplot is the silhouette plot
-        # The silhouette coefficient can range within [-1, 1]
-        ax1.set_xlim([-1, 1])
-        # The (n_clusters+1)*10 is for inserting blank space between silhouette
-        # plots of individual clusters, to demarcate them clearly.
-        ax1.set_ylim([0, len(df_in) + (n_clusters + 1) * 10])
+final_clusters = pd.DataFrame(sm._data, columns = X_std_df.columns)
+my_labels = pd.DataFrame(sm._bmu[0])
+final_clusters = pd.concat([final_clusters, my_labels], axis=1)
 
-        # Initialize the clusterer with n_clusters value and a random generator
-        # seed of 10 for reproducibility.
-        clusterer = KMeans(n_clusters=n_clusters, random_state=10)
-        cluster_labels = clusterer.fit_predict(df_in)
+final_clusters.rename(columns={0:'Lables'}, inplace=True)
 
-        # The silhouette_score gives the average value for all the samples.
-        # This gives a perspective into the density and separation of the formed
-        # clusters
-        silhouette_avg = silhouette_score(df_in, cluster_labels)
-        print("For n_clusters =", n_clusters,
-              "The average silhouette_score is :", silhouette_avg)
+view2D  = View2D(10,10,"", text_size=7)
+view2D.show(sm, col_sz=5,which_dim="all", denormalize=True)
+plt.show()
 
-        # Compute the silhouette scores for each sample
-        sample_silhouette_values = silhouette_samples(df_in, cluster_labels)
+vhts  = BmuHitsView(12,12,"Hits Map",text_size=7)
+vhts.show(sm, anotate=True, onlyzeros=False, labelsize=10, cmap="autumn", logaritmic=False)
 
-        y_lower = 10
-        for i in range(n_clusters):
-            # Aggregate the silhouette scores for samples belonging to
-            # cluster i, and sort them
-            ith_cluster_silhouette_values = \
-                sample_silhouette_values[cluster_labels == i]
+plot_hex_map()
 
-            ith_cluster_silhouette_values.sort()
+# K-Means Clustering
+sm.cluster(3)
+hits  = HitMapView(10,10,"Clustering",text_size=7)
+a = hits.show(sm, labelsize=12)
 
-            size_cluster_i = ith_cluster_silhouette_values.shape[0]
-            y_upper = y_lower + size_cluster_i
-
-            color = cm.nipy_spectral(float(i) / n_clusters)
-            ax1.fill_betweenx(np.arange(y_lower, y_upper),
-                              0, ith_cluster_silhouette_values,
-                              facecolor=color, edgecolor=color, alpha=0.7)
-
-            # Label the silhouette plots with their cluster numbers at the middle
-            ax1.text(-0.05, y_lower + 0.5 * size_cluster_i, str(i))
-
-            # Compute the new y_lower for next plot
-            y_lower = y_upper + 10  # 10 for the 0 samples
-
-        ax1.set_title("The silhouette plot for the various clusters.")
-        ax1.set_xlabel("The silhouette coefficient values")
-        ax1.set_ylabel("Cluster label")
-
-        # The vertical line for average silhouette score of all the values
-        ax1.axvline(x=silhouette_avg, color="red", linestyle="--")
-
-        ax1.set_yticks([])  # Clear the yaxis labels / ticks
-        ax1.set_xticks([-0.1, 0, 0.2, 0.4, 0.6, 0.8, 1])
-
-        plt.suptitle(("Silhouette analysis for KMeans clustering on sample data "
-                      "with n_clusters = %d" % n_clusters),
-                     fontsize=14, fontweight='bold')
-
-    plt.show()
 # ------------------------------------------------------
 # Applying Silhouette Analysis function over normalized df
 silhouette_analysis(X_std, 2, 6)
@@ -864,8 +908,8 @@ for n, method in enumerate(methods):
 fig.savefig('all_methods_dendrogram.png'.format(method))
 plt.show()
 
-Z = linkage(X_std, 'ward')
-Z2 = linkage(X_std, 'centroid',optimal_ordering=True)
+Z = linkage(final_clusters.drop('Lables', axis=1).values, 'ward')
+Z2 = linkage(X_std.drop('Lables', axis=1).values, 'centroid',optimal_ordering=True)
 
 # Ward variance minimization algorithm
 
@@ -1116,7 +1160,7 @@ def elbow_plot(data,max_k):
                     random_state=0,
                     n_init = 50,
                     max_iter = 300).fit(data)
-        data["Clusters"] = kmeans.labels_
+        #data["Clusters"] = kmeans.labels_
         sse[k] = kmeans.inertia_
         # Inertia: Sum of distances of samples to their closest cluster center
     plt.figure(figsize=(8,5))
@@ -1140,7 +1184,6 @@ elbow_plot(X_std_df,k_max)
 
 init_methods = ['points', '++']
 number_K = 4
-
 keys, centroids_list, labels_list = compare_init_methods(X_std, init_methods,number_K)
 
 # pick best kmeans iteration and initialisation method from plots above (please chnage accordingly)

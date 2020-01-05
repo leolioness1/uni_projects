@@ -591,153 +591,90 @@ scaler = StandardScaler()
 X_std = scaler.fit_transform(df)
 X_std_df = pd.DataFrame(X_std, columns=df.columns)
 
+########################################################
 # ----------------------K-modes-------------------------
-# separate df into engage and consume
-df_Engage = df_cat.join(df['gross_monthly_salary'])
-df_Engage.dtypes
+########################################################
+# Selecting variables to use in K-modes and make df_Engage
+df_Engage = df_cat.join(df[['gross_monthly_salary', 'cust_pol_age']])
+df_Engage.columns
 
 # Converting gross_monthly_salary into categorical variable, using bins
 df_Engage['salary_bin'] = pd.cut(df_Engage['gross_monthly_salary'],
                                  [0, 1000, 2000, 3000, 4000, 5000, 6000],
                                  labels=['0-1k', '1k-2k', '2k-3k', '3k-4k', '4k-5k', '5k-6k'])
-# Drop 'gross_monthly_salary', since the goal is to perform K-modes
-df_Engage = df_Engage.drop('gross_monthly_salary', axis=1)
+# Converting cust_pol_age into categorical variable, using bins
+df_Engage['policy_bin'] = pd.cut(df_Engage['cust_pol_age'],
+                                 [20, 25, 30, 35, 40, 45, 50],
+                                 labels=['20-25', '25-30', '30-35', '35-40', '40-45', '45-50'])
+
+# Drop 'gross_monthly_salary' and 'cust_pol_age', since the goal is to perform K-modes
+df_Engage = df_Engage.drop(['gross_monthly_salary', 'cust_pol_age'], axis=1)
 # drop gross_monthly_salary as this information has been captured in total_premiums
 df.drop('gross_monthly_salary', axis=1, inplace=True)
 
 # Take a look at the new df_Engage full categorical
 df_Engage.head()
 df_Engage['salary_bin'] = df_Engage['salary_bin'].astype(str)
+df_Engage['policy_bin'] = df_Engage['policy_bin'].astype(str)
 df_Engage.dtypes
 
 # Choosing K for kmodes by comparing Cost against each K. Copied from:
 # https://www.kaggle.com/ashydv/bank-customer-clustering-k-modes-clustering
 cost = []
-for num_clusters in list(range(1, 5)):
+for num_clusters in list(range(1, 21)):
     kmode = KModes(n_clusters=num_clusters, init="Cao", n_init=1, verbose=1)
     kmode.fit_predict(df_Engage)
     cost.append(kmode.cost_)
 
-y = np.array([i for i in range(1, 5, 1)])
+y = np.array([i for i in range(1, 21, 1)])
 plt.figure()
 plt.plot(y, cost)
-plt.savefig('K-mode_elbow.png')
+plt.show()
 
-## ------  K-modes with k of 2
-kmodes_clustering = KModes(n_clusters=2, init='Cao', n_init=50, verbose=1)
+## ------  K-modes with k of 7
+k = 7
+kmodes_clustering = KModes(n_clusters=k, init='Cao', n_init=50, verbose=1)
 clusters_cat = kmodes_clustering.fit_predict(df_Engage)
 
-pca = PCA(2)
-
 # Turn the dummified df into two columns with PCA
-plot_columns = pca.fit_transform(X_std_df.iloc[:,0:13])
+pca = PCA(2)
+plot_columns = pca.fit_transform(X_std_df.iloc[:, 0:13])
 X_std_df.shape
 
-LABEL_COLOR_MAP = {0 : 'r',
-                   1 : 'k',
-                   2 : 'b'}
+LABEL_COLOR_MAP = {0: 'b',
+                   1: 'g',
+                   2: 'r',
+                   3: 'c',
+                   4: 'm',
+                   5: 'y',
+                   6: 'k'}
 
 fig, ax = plt.subplots()
 for c in np.unique(clusters_cat):
     ix = np.where(clusters_cat == c)
-    ax.scatter(plot_columns[:,1][ix], plot_columns[:,0][ix], c = LABEL_COLOR_MAP[c], label = kmodes_clustering.cluster_centroids_[c], s = 50, marker='.')
+    ax.scatter(plot_columns[:, 1][ix],
+               plot_columns[:, 0][ix],
+               c=LABEL_COLOR_MAP[c],
+               label=kmodes_clustering.cluster_centroids_[c],
+               s=30, marker='.')
 ax.legend()
+plt.title('K-modes over first 2 Principal Components, with %i' % k + ' clusters')
 fig.savefig("Kdo")
-# plt.show()
+plt.show()
 
 # Print the cluster centroids
-print("The mode of each variable for each cluster:\n{}".format(kmodes_clustering.cluster_centroids_)) #This gives the mode of each variable for each cluster.
+print("The mode of each variable for each cluster:\n{}".format(kmodes_clustering.cluster_centroids_)) # This gives the mode of each variable for each cluster.
 df_cat_centroids = pd.DataFrame(kmodes_clustering.cluster_centroids_,
                                    columns=df_Engage.columns)
 
 unique, counts = np.unique(kmodes_clustering.labels_, return_counts=True)
 cat_counts = pd.DataFrame(np.asarray((unique, counts)).T, columns=['Label', 'Number'])
 cat_centroids = pd.concat([df_Engage, cat_counts], axis=1)
-del cat_counts
+del cat_counts, k
 
+# The countplots and correlation matrix that were here
+# now are in the data_exploratory.py file
 
-
-# ------ Count-plot for customers by salary_bin and education level
-plt.figure()
-ax = sns.countplot(x=df_Engage['salary_bin'], hue='edu_desc', data=df_Engage,
-                   order=df_Engage['salary_bin'].value_counts().index,
-                   hue_order=['Basic', 'High School', 'BSc/MSc', 'PhD'])
-plt.legend(loc='upper right')
-
-for p in ax.patches:
-    ax.annotate(format(p.get_height(), '1.0f'),
-                (p.get_x() + p.get_width() / 2., p.get_height()),
-                ha='center', va='center', xytext=(0, 10), textcoords='offset points')
-
-plt.savefig('salary_bin_educ.png')
-# plt.show()
-# Most of the customers belong to the '1k-2k', '2k-3k', '3k-4k' bins
-# Most of the customers education level is High School and BSc/MSc
-# There is no correlation between education level and salary
-# So, education level should not be a valuable variable for the analysis
-
-# ------ Count-plot for customers by salary_bin and geographic_area
-plt.figure()
-
-df_plot = df_Engage.groupby(['salary_bin', 'geographic_area']).size().reset_index().pivot(columns='salary_bin',
-                                                                                          index='geographic_area',
-                                                                                          values=0)
-df_plot.plot(kind='bar', stacked=True)
-
-# With this plot we can determine 3 things:
-# 1. There are more customers in region 4
-# 2. Region 2 is the region with less customers
-# 3. The proportion of salary ranges is almost homogeneous over all the regions
-
-plt.savefig('salary_bin_geo.png')
-# plt.show()
-del df_plot
-# ------ Count-plot for customers by salary_bin and has_children
-plt.figure()
-
-df_plot = df_Engage.groupby(['salary_bin', 'has_children']).size().reset_index().pivot(columns='salary_bin',
-                                                                                       index='has_children', values=0)
-ax = df_plot.plot(kind='bar', stacked=True)
-
-# With this plot we can determine 2 main things:
-# 1. There are more customers with children: 7000 has children and 3000 does not.
-# 2. The proportion of higher salaries is higher over the customers with no children.
-
-# plt.show()
-del df_plot, df_Engage
-
-# Looking at the plots of categorical from the Engage data frame,
-# 1. The main variable in this data frame is salary.
-# 2. Age can be an important variable as well, but since a lot of the data is wrong
-# 	then is better not to trust in this variable.
-
-# -------------- Plotting correlation matrix
-# # Compute the correlation matrix
-corr = df.corr()
-
-# Set Up Mask To Hide Upper Triangle
-mask = np.zeros_like(corr, dtype=np.bool)
-mask[np.triu_indices_from(mask)] = True
-np.triu_indices_from(mask)
-mask[np.triu_indices_from(mask)] = True
-
-f, ax = plt.subplots(figsize=(10, 13))
-heatmap = sns.heatmap(corr,
-                      mask=mask,
-                      square=True,
-                      linewidths=0.5,
-                      cmap='coolwarm',
-                      cbar_kws={'shrink': 0.4,
-                                'ticks': [-1, -.5, 0, 0.5, 1]},
-                      vmin=-1,
-                      vmax=1,
-                      annot=True)
-# add the column names as labels
-ax.set_yticklabels(corr.columns, rotation=0)
-ax.set_xticklabels(corr.columns)
-sns.set_style({'xtick.bottom': True}, {'ytick.left': True})
-# plt.show()
-del corr, mask, heatmap
 
 #########################################################
 # ------------------- Standardization ----------------
@@ -1194,234 +1131,3 @@ centroids_dict = dict(zip(keys, centroids_list))
 labels_dict = dict(zip(keys, labels_list))
 print(" Labels: \n {} \n Centroids: \n {}".format(list(labels_dict[best_method]),
                                                   centroids_dict[best_method]))
-#########################################################
-# ---------------- Spectral Clustering ------------------
-#########################################################
-from sklearn.cluster import SpectralClustering
-from mpl_toolkits.mplot3d import Axes3D
-# 1) Choosing variables to perform clustering
-SC_df = df[['customer_monetary_value', 'claims_rate', 'premium_wage_ratio']]
-
-# 2) Standardize the data frame before performing Clustering
-scaler = StandardScaler()
-X_std = scaler.fit_transform(SC_df)
-X_stdSC_df = pd.DataFrame(X_std, columns=SC_df.columns, index=SC_df.index)
-
-# 3.a) Determine the correct number of clusters using the elbow plot
-elbow_plot(X_stdSC_df, 9)   # Let's try 3 clusters
-
-# The Spectral Clustering Method can be developed with 2 types of affinity.
-# We will use both types and compare the results to choose the best
-# 4.a) Using affinity = ‘rbf’ ( Kernel of the euclidean distanced )
-# Building the clustering model using affinity = ‘rbf’
-spectral_model_rbf = SpectralClustering(n_clusters=3, affinity='rbf')
-
-# Training the model and Storing the predicted cluster labels
-labels_rbf = spectral_model_rbf.fit_predict(X_stdSC_df)
-
-# 4.b) Using affinity = ‘nearest_neighbors’
-spectral_model_nn = SpectralClustering(n_clusters=3, affinity='nearest_neighbors')
-
-# Training the model and Storing the predicted cluster labels
-labels_nn = spectral_model_nn.fit_predict(X_stdSC_df)
-
-# 5.a) Plotting the results for rbf:
-# Building the label to colour mapping
-colours = {}
-colours[0] = 'b'
-colours[1] = 'g'
-colours[2] = 'r'
-colours[3] = 'c'
-colours[4] = 'm'
-colours[5] = 'y'
-colours[6] = 'b'
-
-# Building the colour vector for each data point
-cvec = [colours[label] for label in labels_rbf]
-
-# Plotting the clustered scatter plot
-fig = plt.figure()
-ax = fig.add_subplot(111, projection='3d')
-
-xs = [X_stdSC_df['customer_monetary_value']]
-ys = [X_stdSC_df['claims_rate']]
-zs = [X_stdSC_df['premium_wage_ratio']]
-
-ax.scatter(xs, ys, zs, c=cvec, marker='o')
-
-ax.set_xlabel('CMV')
-ax.set_ylabel('Claims Rate')
-ax.set_zlabel('PWR')
-
-plt.show()
-
-# 5.b) Plotting the results for nearest_neighbors:
-# Building the colour vector for each data point
-colours = {}
-colours[0] = 'b'
-colours[1] = 'g'
-colours[2] = 'r'
-colours[3] = 'c'
-colours[4] = 'm'
-colours[5] = 'y'
-colours[6] = 'b'
-
-# Building the colour vector for each data point
-cvec = [colours[label] for label in labels_nn]
-
-# Plotting the clustered scatter plot
-fig = plt.figure()
-ax = fig.add_subplot(111, projection='3d')
-
-xs = [X_stdSC_df['customer_monetary_value']]
-ys = [X_stdSC_df['claims_rate']]
-zs = [X_stdSC_df['premium_wage_ratio']]
-
-ax.scatter(xs, ys, zs, c=cvec, marker='o')
-
-ax.set_xlabel('CMV')
-ax.set_ylabel('Claims Rate')
-ax.set_zlabel('PWR')
-
-plt.show()
-
-#-------- Re-Scale the data before plotting -------------
-# Re-scale df
-# X_stdSC_df = X_stdSC_df.drop('Clusters', axis=1)  # It{s not ok
-scaler.inverse_transform(X=X_stdSC_df)
-SC_df = pd.DataFrame(scaler.inverse_transform(X=X_stdSC_df),
-                     columns=X_stdSC_df.columns, index=X_stdSC_df.index)
-# Add the clusters labels to SC_df
-SC_df = pd.DataFrame(pd.concat([SC_df, pd.DataFrame(labels_rbf)], axis=1))
-SC_df.columns = ['CMV', 'Claims Rate', 'PWR', 'Labels']
-SC_df.head()        # I think I'm loosing the Customer Identity code around here
-SC_df.dropna(inplace=True)
-
-del scaler, X_stdSC_df, X_std
-
-
-
-#########################################################
-# ------------- Decision Tree Classifier ----------------
-#########################################################
-from sklearn.tree import DecisionTreeClassifier
-from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
-from sklearn.model_selection import train_test_split
-from IPython.display import Image           # Decision Tree Visualization
-from sklearn.externals.six import StringIO  # Decision Tree Visualization
-from sklearn.tree import export_graphviz    # Decision Tree Visualization
-import pydotplus   # Must be installed manually in anaconda prompt with: conda install pydotplus
-import pydot
-from sklearn import tree
-import collections
-
-
-
-
-from sklearn import metrics #Import scikit-learn metrics module for accuracy calculation
-
-
-
-# Define the target variable 'y'
-X = SC_df.drop('Labels', axis=1)
-y = SC_df[['Labels']]  # The target is the cluster label
-
-# Split up the data into a training set and a test set
-# 70% training and 30% test
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=1)
-
-# Create Decision Tree classifier object
-clf = DecisionTreeClassifier()
-
-# Define the parameters conditions for the Decision Tree
-# dtree = DecisionTreeClassifier(random_state=0, max_depth=None)
-# dtree = DecisionTreeClassifier(criterion='entropy')
-
-# Train the model
-clf = clf.fit(X_train, y_train)
-
-# Evaluation of the decision tree results
-predictions = clf.predict(X_test)
-
-conf_matrix = confusion_matrix(y_test, predictions)
-accuracy = accuracy_score(y_test, predictions)
-
-# Show confusion matrix
-conf_matrix
-
-# Show accuracy
-accuracy
-
-# Print a classification tree report
-print(classification_report(y_test, predictions))
-
-features = list(SC_df.columns[0:3])
-features
-
-# Plotting Decision Tree
-dot_data = StringIO()
-tree.export_graphviz(clf,
-                        out_file=dot_data,
-                        feature_names=features,
-                        filled=True,
-                        rounded=True,
-                        special_characters=True)
-graph = pydot.graph_from_dot_data(dot_data.getvalue())
-graph.write_png('Customers_clf_tree.png')
-Image(graph[0].create_png('Customers_clf_tree.png'))
-
-# Second try:
-dot_data = StringIO()
-tree.export_graphviz(clf,
-                     out_file=dot_data,
-                     feature_names=features,
-                     filled=True,
-                     rounded=True,
-                     impurity=False)
-
-# Draw graph
-graph = pydot.graph_from_dot_data(dot_data.getvalue())
-
-# Show graph
-Image(graph.create_png())
-
-# Create pdf
-graph.write_pdf('Customers_clf_tree.pdf')
-
-# Create png
-graph.write_png('Customers_clf_tree.png')
-
-
-
-Image(graph[0].create_pdf('Customers_clf_tree.pdf'))
-
-
-# colors = ('turquoise', 'orange')
-# edges = collections.defaultdict(list)
-
-# for edge in graph.get_edge_list():
-#     edges[edge.get_source()].append(int(edge.get_destination()))
-#
-# for edge in edges:
-#     edges[edge].sort()
-#     for i in range(2):
-#         dest = graph.get_node(str(edges[edge][i]))[0]
-#         dest.set_fillcolor(colors[i])
-
-
-
-# Convert to png
-from subprocess import call
-call(['dot', '-Tpng', 'tree.dot', '-o', 'tree.png', '-Gdpi=600'])
-
-# Display in jupyter notebook
-from IPython.display import Image
-Image(filename = 'tree.png')
-
-graph = pydotplus.graph_from_dot_data(dot_data.getvalue())
-Image(graph.create_png())
-
-graph = pydot.graph_from_dot_data(dot_data.getvalue())
-Image(graph[0].create_png())
-graph.write_png("DecisionTree.png")
-# ------------------------------------------------------

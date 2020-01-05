@@ -1,38 +1,3 @@
-# Import packages
-import sqlite3
-import pandas as pd
-import numpy as np
-from datetime import date
-import scipy.cluster.hierarchy as clust_hier
-from scipy import stats
-from scipy.cluster.hierarchy import dendrogram, linkage
-from matplotlib import pyplot as plt
-import matplotlib.font_manager
-from pandas.util.testing import assert_frame_equal
-from sklearn.cluster import KMeans, DBSCAN
-from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler
-import seaborn as sns
-from collections import defaultdict
-from matplotlib.colors import rgb2hex, colorConverter
-from itertools import combinations
-from sklearn.cluster import MeanShift, estimate_bandwidth
-from mpl_toolkits.mplot3d import Axes3D
-from matplotlib import cm
-from scipy.cluster.vq import kmeans2
-import os
-from kmodes.kmodes import KModes
-from sklearn import mixture
-from sklearn.metrics import silhouette_samples
-from sklearn.metrics import silhouette_score
-from sompy.sompy import SOMFactory
-from sompy.visualization.bmuhits import BmuHitsView
-from sompy.visualization.mapview import View2D
-from sompy.visualization.hitmap import HitMapView
-from sompy.visualization.plot_tools import plot_hex_map
-
-import logging
-
 # This is a summary of the labs sessions topics we’ve covered
 # Just to put checkmarks on the techniques we are using in this project:
 
@@ -105,10 +70,46 @@ import logging
 #	from dtreeplt import dtreeplt
 #	import graphviz
 
+# Import packages
+import sqlite3
+import pandas as pd
+import numpy as np
+from datetime import date
+import scipy.cluster.hierarchy as clust_hier
+from scipy import stats
+from scipy.cluster.hierarchy import dendrogram, linkage
+from matplotlib import pyplot as plt
+import matplotlib.font_manager
+from pandas.util.testing import assert_frame_equal
+from sklearn.cluster import KMeans, DBSCAN
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
+import seaborn as sns
+from collections import defaultdict
+from matplotlib.colors import rgb2hex, colorConverter
+from itertools import combinations
+from sklearn.cluster import MeanShift, estimate_bandwidth
+from mpl_toolkits.mplot3d import Axes3D
+from matplotlib import cm
+from scipy.cluster.vq import kmeans2
+import os
+from kmodes.kmodes import KModes
+from sklearn import mixture
+from sklearn.metrics import silhouette_samples
+from sklearn.metrics import silhouette_score
+from sompy.sompy import SOMFactory
+from sompy.visualization.bmuhits import BmuHitsView
+from sompy.visualization.mapview import View2D
+from sompy.visualization.hitmap import HitMapView
+from sompy.visualization.plot_tools import plot_hex_map
+import logging
+
+#defining functions to be used further down
 
 # Selecting the number of clusters with silhouette analysis
 # Reference:
 # https://scikit-learn.org/stable/auto_examples/cluster/plot_kmeans_silhouette_analysis.html
+
 def silhouette_analysis(df_in, n, m):
     '''
     Selecting the number of clusters with
@@ -190,6 +191,67 @@ def silhouette_analysis(df_in, n, m):
     plt.show()
 
 
+# Define the lower and upper quartiles boundaries for plotting the boxplots
+# and for dropping values. Numbers between (0,1) and qtl1 < qtl2
+
+def boxplot_all_columns(df_in, qtl_1, qtl_2):
+    """
+    qtl_1 is the lower quantile use to plot the boxplots. Number between (0,1)
+    qtl_2 is the upper quantile use to plot the boxplots. Number between (0,1)
+    """
+    sns.set(style="whitegrid")
+    fig, ax = plt.subplots(figsize=(15, 15))
+    ax = sns.boxplot(data=df_in, orient="h", palette="Set2", whis=[qtl_1, qtl_2])
+    plt.show()
+
+
+# Define quartiles for plotting the boxplots and dropping rows
+def IQR_drop_outliers(df_in, qtl_1, qtl_2):
+    '''
+    qtl_1 is the lower quantile use to drop the rows. Number between (0, 1)
+    qtl_2 is the upper quantile use to drop the rows. Number between (0, 1)
+    '''
+    lower_range = df_in.quantile(qtl_1)
+    upper_range = df_in.quantile(qtl_2)
+    # df_out is filtered with values within the quartiles boundaries
+    df_out = df_in[~((df_in < lower_range) | (df_in > upper_range)).any(axis=1)]
+    df_outliers = df_in[((df_in < lower_range) | (df_in > upper_range)).any(axis=1)]
+    return df_out, df_outliers
+
+
+def corr_plot(data):
+    corr = data.corr()
+
+    # Set Up Mask To Hide Upper Triangle
+    mask = np.zeros_like(corr, dtype=np.bool)
+    mask[np.triu_indices_from(mask)] = True
+    np.triu_indices_from(mask)
+    mask[np.triu_indices_from(mask)] = True
+
+    f, ax = plt.subplots(figsize=(10, 13))
+    heatmap = sns.heatmap(corr,
+                          mask=mask,
+                          square=True,
+                          linewidths=0.5,
+                          cmap='coolwarm',
+                          cbar_kws={'shrink': 0.4,
+                                    'ticks': [-1, -.5, 0, 0.5, 1]},
+                          vmin=-1,
+                          vmax=1,
+                          annot=True)
+    # add the column names as labels
+    ax.set_yticklabels(corr.columns, rotation=0)
+    ax.set_xticklabels(corr.columns)
+    sns.set_style({'xtick.bottom': True}, {'ytick.left': True})
+    del corr, mask, heatmap
+
+
+# Reference:
+# https://medium.com/@prashant.nair2050/hands-on-outlier-detection-and-treatment-in-python-using-1-5-iqr-rule-f9ff1961a414
+# We are now going to scale the data so we can do effective clustering of our variables
+# Standardize the data to have a mean of ~0 and a variance of 1
+
+
 # -------------- Querying the database file
 
 # set db path
@@ -262,7 +324,8 @@ combined_df = pd.merge(engage_df, lob_df, on='Customer Identity', how='left')
 original_columns = combined_df.columns
 
 # Show a description of the data frame
-print(combined_df.describe(include='all'))
+orig_desc=combined_df.describe(include='all')
+print(orig_desc)
 
 # Drop 'index_x' and 'index_y' since they are not useful anymore
 combined_df.drop(['index_y', 'index_x'], axis=1, inplace=True)
@@ -306,26 +369,34 @@ combined_df.set_axis(['policy_creation_year',
 print(combined_df.shape)
 
 # Show the type of each column
-combined_df.dtypes
+print(combined_df.dtypes)
+
+#Data Transformation and Missing value analysis
 
 # Since education level is the only column with string values
-# it is convenient to transform it from categorical to numerical.
-# Before doing that, it is possible to split the education columns into two
-# columns, one with numeric part and the other one with the education description
+# It is possible to split the education columns into two columns, one with numeric part and the other one with the education description
 combined_df[['edu_code', 'edu_desc']] = combined_df['education_lvl'].str.split(" - ", expand=True)
 
 # Create a one-hot encoded set of the type values for 'education_lvl'
-edu_values = combined_df.edu_desc.unique()
+# (ended up not using this due to it's increase in dimensionality of our input space)
+#edu_values = combined_df.edu_desc.unique()
 
-# Delete education_lvl columns, since its information is into the two new dummy columns
+# Delete education_lvl and the edu_code columns, since its information is captured in the edu_desc cat column
 combined_df = combined_df.drop(['education_lvl', 'edu_code'], axis=1)
+
+
 
 # Checking for missing data using isnull() function & calculating the % of null values per column
 # Show the distribution of missing data per column
 print('This is the missing data distribution per column (%):\n',
       round((combined_df.isnull().sum() / len(combined_df)) * 100, 2))
+print('This is the data distribution per column equal to 0(%):\n',
+      round(((combined_df ==0).sum() / len(combined_df)) * 100, 2))
 
-# Show the percentage of all rows with missing data, no matter which column
+#We decided to fill null values in the premium types columns with 0, as these didn't have any zeros before
+#therefore we interpreted this as meaning that the customer did not have this type of policy
+combined_df[['motor_premiums', 'household_premiums', 'health_premiums', 'life_premiums', 'work_premiums']]=combined_df[['motor_premiums', 'household_premiums', 'health_premiums', 'life_premiums', 'work_premiums']].fillna(0)
+# Show the percentage of all rows with missing data
 print('The sum of percentage of missing data for all rows is: ',
       round((combined_df.isnull().sum() / len(combined_df)).sum() * 100, 2), '% \n',
       'which are ', combined_df.isnull().sum().sum(), 'rows of the total ', len(combined_df), 'rows')
@@ -423,11 +494,11 @@ else:
     print('5. Not all values from has_children column are binary values.',
           ' Additional check is necessary.', '\n')
 
-# we decide to map the binary variable to a string variable to treat is as a categorical variable
+# we decide to map the binary variable to a string variable to treatit as a categorical variable
 df['has_children'] = df['has_children'].map({1: 'Yes', 0: 'No'})
 
 # birth_year: should not exist values larger than policy year creation
-print("6. Are there values greater than policy_creation _year on the 'birth_year'?: ",
+print("6. Are there values greater than policy_creation _year on the 'birth_year' + 18 years?: ",
       sum(np.where(df['policy_creation_year'] < (df['birth_year'] + 18), 1, 0)))
 
 # Due to the high levels of inconsistent data in the birth year column we decide to drop this column as the data in it cannot be trusted
@@ -436,15 +507,6 @@ df.drop('birth_year', axis=1, inplace=True)
 # customer_monetary_value (CMV), nothing to verify
 # claims_rate, nothing to verify
 # all premiums, nothing to verify
-# #create feature for number of active premiums per customer
-# df['number_active_premiums']=df[['motor_premiums', 'household_premiums', 'health_premiums',
-#        'life_premiums', 'work_premiums']].gt(0).sum(axis=1)
-
-#create feature for number of premiums cancelled this year but were active the previous year per customer
-#a negative number for the premium indicates a reversal i.e. that a policy was active the previous year but canceled this year
-df['cancelled_premiums_pct']=df[['motor_premiums', 'household_premiums', 'health_premiums',
-       'life_premiums', 'work_premiums']].lt(0).sum(axis=1)/5
-
 # all the other columns, (nothing to verify)
 
 #########################################################
@@ -454,43 +516,23 @@ df['cancelled_premiums_pct']=df[['motor_premiums', 'household_premiums', 'health
 # With the additional information given,
 # it's possible to obtain extra valuable information.
 
-# For 'customer_monetary_value' (CMV), it's possible to clear the given formula:
-# CMV = (Customer annual profit)(number of years as customer) - (acquisition cost)
-# Therefore:
-# (acquisition cost) = (Customer annual profit)(number of years as customer) - CMV
-#     where: (Customer annual profit) and (number of years as customer)
-# can be calculated prior, as a requirement to get (acquisition cost)
+# #create feature for number of active premiums per customer
+df['active_premiums']=df[['motor_premiums', 'household_premiums', 'health_premiums',
+        'life_premiums', 'work_premiums']].gt(0).sum(axis=1)
+
+#create feature for number of premiums cancelled this year but were active the previous year per customer
+#a negative number for the premium indicates a reversal i.e. that a policy was active the previous year but canceled this year
+#after correlation analysis we decide to make this a pct of total active premiums last year (5)
+df['cancelled_premiums_pct']=df[['motor_premiums', 'household_premiums', 'health_premiums',
+       'life_premiums', 'work_premiums']].lt(0).sum(axis=1)/df[['motor_premiums', 'household_premiums', 'health_premiums',
+       'life_premiums', 'work_premiums']].ne(0).sum(axis=1)
 
 # Calculate how old is each customer's first policy
 # and create a new column named 'Cust_pol_age'
 today_year = int(date.today().year)
-df['cust_pol_age'] = today_year - df['policy_creation_year']
+df['cust_tenure'] = today_year - df['policy_creation_year']
 
 # we decided to no longer generate customer age after discovering a big chunk of the data is unreliable
-
-# dropping the year column as this information has now been captured in the age variable created
-df.drop(['policy_creation_year'], axis=1, inplace=True)
-
-# Calculating and adding 'total_premiums' to the data frame
-df['total_premiums'] = df['motor_premiums'] + \
-                       df['household_premiums'] + \
-                       df['health_premiums'] + \
-                       df['life_premiums'] + \
-                       df['work_premiums']
-
-df['motor_premiums'] = df['motor_premiums'] / df['total_premiums']
-df['household_premiums'] = df['household_premiums'] / df['total_premiums']
-df['health_premiums'] = df['health_premiums'] / df['total_premiums']
-df['life_premiums'] = df['life_premiums'] / df['total_premiums']
-df['work_premiums'] = df['work_premiums'] / df['total_premiums']
-
-# # # Calculating the acquisition cost assuming claims_rate is the same as that over thrconstant last 2 yrs
-df['cust_acq_cost'] = (df['total_premiums']-df['claims_rate'] * df['total_premiums']) * df['cust_pol_age'] - df['customer_monetary_value']
-# # Calculate 'Amount paid by the insurance company' (
-#df['amt_paidby_comp'] = df['claims_rate'] * df['total_premiums']
-df.drop(['claims_rate'], axis=1, inplace=True)
-df.drop('customer_monetary_value',axis=1,inplace=True)
-
 
 # For 'claims_rate' (CR) it's possible to clear the 'Amount paid by the insurance company'
 # claims_rate = (Amount paid by the insurance company)/(Total Premiums)
@@ -499,15 +541,37 @@ df.drop('customer_monetary_value',axis=1,inplace=True)
 # 'motor_premiums', 'household_premiums', 'health_premiums',
 # 'life_premiums', 'work_premium
 
+# Calculating and adding 'total_premiums' to the data frame
+df['total_premiums'] = df['motor_premiums'] + \
+                       df['household_premiums'] + \
+                       df['health_premiums'] + \
+                       df['life_premiums'] + \
+                       df['work_premiums']
+
+# # Calculate 'Amount paid by the insurance company' assuming claims_rate is the same as that over the last 2 yrs
+df['amt_paidby_comp'] = df['claims_rate'] * df['total_premiums']
+
+# For 'customer_monetary_value' (CMV), it's possible to clear the given formula:
+# CMV = (Customer annual profit)(number of years as customer) - (acquisition cost)
+# Therefore:
+# (acquisition cost) = (Customer annual profit)(number of years as customer) - CMV
+#     where: (Customer annual profit) and (number of years as customer)
+# can be calculated prior, as a requirement to get (acquisition cost)
+#  we assumed Customer annual profit = total premiums - amt_paidby_comp and number of years as customer was the cust_tenure
+
+# # # Calculating the acquisition cost assuming claims_rate is the same as that over the last 2 yrs
+df['cust_acq_cost'] = (df['total_premiums']-df['amt_paidby_comp']) * df['cust_tenure'] - df['customer_monetary_value']
+
 # Calculate the premium/wage proportion
 df['premium_wage_ratio'] = df['total_premiums'] / (df['gross_monthly_salary'] * 12)
-df.drop(['total_premiums'], axis=1, inplace=True)
 
+
+#we select the categorical columns so we can analyse the numerical values visually more easily
 # Categorical boolean mask
 categorical_feature_mask = df.dtypes == object
 # filter categorical columns using mask and turn it into a list
 categorical_cols = df.columns[categorical_feature_mask].tolist()
-
+df.columns
 # -------------- Detecting outliers
 # After logical validation, we check for outliers using different methods:
 # 1) Histograms
@@ -522,44 +586,12 @@ def outliers_hist(df_in):
     fig.savefig("outliers_hist.png")
 
 # # Apply histogram function to the entire data frame
-# outliers_hist(df.drop(categorical_cols, axis=1))
+outliers_hist(df.drop(categorical_cols, axis=1))
 
 #########################################################
 # ------------------- Excluding outliers ----------------
 #########################################################
 
-# Define the lower and upper quartiles boundaries for plotting the boxplots
-# and for dropping values. Numbers between (0,1) and qtl1 < qtl2
-
-def boxplot_all_columns(df_in, qtl_1, qtl_2):
-    """
-    qtl_1 is the lower quantile use to plot the boxplots. Number between (0,1)
-    qtl_2 is the upper quantile use to plot the boxplots. Number between (0,1)
-    """
-    sns.set(style="whitegrid")
-    fig, ax = plt.subplots(figsize=(15, 15))
-    ax = sns.boxplot(data=df_in, orient="h", palette="Set2", whis=[qtl_1, qtl_2])
-    plt.show()
-
-
-# Define quartiles for plotting the boxplots and dropping rows
-def IQR_drop_outliers(df_in, qtl_1, qtl_2):
-    '''
-    qtl_1 is the lower quantile use to drop the rows. Number between (0, 1)
-    qtl_2 is the upper quantile use to drop the rows. Number between (0, 1)
-    '''
-    lower_range = df_in.quantile(qtl_1)
-    upper_range = df_in.quantile(qtl_2)
-    # df_out is filtered with values within the quartiles boundaries
-    df_out = df_in[~((df_in < lower_range) | (df_in > upper_range)).any(axis=1)]
-    df_outliers = df_in[((df_in < lower_range) | (df_in > upper_range)).any(axis=1)]
-    return df_out, df_outliers
-
-
-# Reference:
-# https://medium.com/@prashant.nair2050/hands-on-outlier-detection-and-treatment-in-python-using-1-5-iqr-rule-f9ff1961a414
-# We are now going to scale the data so we can do effective clustering of our variables
-# Standardize the data to have a mean of ~0 and a variance of 1
 scaler = StandardScaler()
 X_std = scaler.fit_transform(df.drop(categorical_cols, axis=1))
 X_std_df = pd.DataFrame(X_std, columns=df.drop(categorical_cols, axis=1).columns)
@@ -568,113 +600,63 @@ qtl_1 = 0.01  # lower boundary
 qtl_2 = 0.99  # upper boundary
 
 # Apply box-plot function to the selected columns
-# boxplot_all_columns(X_std_df, qtl_1, qtl_2)
+boxplot_all_columns(X_std_df, qtl_1, qtl_2)
+print(df.shape)
 
 # There are outliers, so let's remove them with the 'IQR_drop_outliers' function
 df, df_outliers = IQR_drop_outliers(df, qtl_1, qtl_2)
-
+print(df.shape)
 # Standardize the data after dropping the outliers
 scaler = StandardScaler()
 X_std = scaler.fit_transform(df.drop(categorical_cols, axis=1))
 X_std_df = pd.DataFrame(X_std, columns=df.drop(categorical_cols, axis=1).columns)
 
 # Plot without outliers
-# boxplot_all_columns(X_std_df, qtl_1, qtl_2)
+boxplot_all_columns(X_std_df, qtl_1, qtl_2)
 
 #Allocate the categorical columns to a new Dataframe
-
 df_cat = df.loc[:, categorical_cols]
 df.drop(categorical_cols, axis=1, inplace=True)
 
-# Clustering can be performed using those two variables
-scaler = StandardScaler()
-X_std = scaler.fit_transform(df)
-X_std_df = pd.DataFrame(X_std, columns=df.columns)
 
-########################################################
-# ----------------------K-modes-------------------------
-########################################################
-# Selecting variables to use in K-modes and make df_Engage
-df_Engage = df_cat.join(df[['gross_monthly_salary', 'cust_pol_age']])
-df_Engage.columns
+# -------------- Plotting correlation matrix
+# # Compute the correlation matrix
+corr_plot(df)
 
-# Converting gross_monthly_salary into categorical variable, using bins
-df_Engage['salary_bin'] = pd.cut(df_Engage['gross_monthly_salary'],
-                                 [0, 1000, 2000, 3000, 4000, 5000, 6000],
-                                 labels=['0-1k', '1k-2k', '2k-3k', '3k-4k', '4k-5k', '5k-6k'])
-# Converting cust_pol_age into categorical variable, using bins
-df_Engage['policy_bin'] = pd.cut(df_Engage['cust_pol_age'],
-                                 [20, 25, 30, 35, 40, 45, 50],
-                                 labels=['20-25', '25-30', '30-35', '35-40', '40-45', '45-50'])
+#create a copy of the df in order to perform clustering on
+clust_df = df.copy(deep=True)
 
-# Drop 'gross_monthly_salary' and 'cust_pol_age', since the goal is to perform K-modes
-df_Engage = df_Engage.drop(['gross_monthly_salary', 'cust_pol_age'], axis=1)
+#As an attempt to reduce the input space we will be dropping some variables from the DataFrame before performing clustering
+# dropping the year column as this information has now been captured in the age variable created
+clust_df.drop(['policy_creation_year'], axis=1, inplace=True)
+#We drop the total_premiums since it's value has been captured by each of the individual types of premiums as a pct of total premiums
+#and in the above new variable
+clust_df.drop(['total_premiums'], axis=1, inplace=True)
+
+#after correlation analysis we decide to drop this variable
+clust_df.drop('number_active_premiums',axis=1,inplace=True)
+
+#since claims_rate, customer_monetary_value,amt_paidby_comp and cust_acq_cost are highly correlated with each other
+#mainly because they are mainly linear combinations of each other, we decide to keep customer aquisition cost since it is the most informative for the insurance industry
+clust_df.drop('claims_rate', axis=1, inplace=True)
+clust_df.drop('customer_monetary_value',axis=1,inplace=True)
+clust_df.drop('amt_paidby_comp',axis=1,inplace=True)
+
+
+#we decide to make the other premium values as a pct of total premiums to capture that information here
+#this was also after correlation analysis and to reduce size of the input space
+clust_df['motor_premiums_pct'] = df['motor_premiums'] / df['total_premiums']
+clust_df['household_premiums_pct'] = df['household_premiums'] / df['total_premiums']
+clust_df['health_premiums_pct'] = df['health_premiums'] / df['total_premiums']
+clust_df['life_premiums_pct'] = df['life_premiums'] / df['total_premiums']
+clust_df['work_premiums_pct'] = df['work_premiums'] / df['total_premiums']
+clust_df.drop(['motor_premiums', 'household_premiums', 'health_premiums', 'life_premiums', 'work_premiums'],axis=1, inplace=True)
+
 # drop gross_monthly_salary as this information has been captured in total_premiums
-df.drop('gross_monthly_salary', axis=1, inplace=True)
+clust_df.drop('gross_monthly_salary', axis=1, inplace=True)
 
-# Take a look at the new df_Engage full categorical
-df_Engage.head()
-df_Engage['salary_bin'] = df_Engage['salary_bin'].astype(str)
-df_Engage['policy_bin'] = df_Engage['policy_bin'].astype(str)
-df_Engage.dtypes
-
-# Choosing K for kmodes by comparing Cost against each K. Copied from:
-# https://www.kaggle.com/ashydv/bank-customer-clustering-k-modes-clustering
-cost = []
-for num_clusters in list(range(1, 21)):
-    kmode = KModes(n_clusters=num_clusters, init="Cao", n_init=1, verbose=1)
-    kmode.fit_predict(df_Engage)
-    cost.append(kmode.cost_)
-
-y = np.array([i for i in range(1, 21, 1)])
-plt.figure()
-plt.plot(y, cost)
-plt.show()
-
-## ------  K-modes with k of 7
-k = 7
-kmodes_clustering = KModes(n_clusters=k, init='Cao', n_init=50, verbose=1)
-clusters_cat = kmodes_clustering.fit_predict(df_Engage)
-
-# Turn the dummified df into two columns with PCA
-pca = PCA(2)
-plot_columns = pca.fit_transform(X_std_df.iloc[:, 0:13])
-X_std_df.shape
-
-LABEL_COLOR_MAP = {0: 'b',
-                   1: 'g',
-                   2: 'r',
-                   3: 'c',
-                   4: 'm',
-                   5: 'y',
-                   6: 'k'}
-
-fig, ax = plt.subplots()
-for c in np.unique(clusters_cat):
-    ix = np.where(clusters_cat == c)
-    ax.scatter(plot_columns[:, 1][ix],
-               plot_columns[:, 0][ix],
-               c=LABEL_COLOR_MAP[c],
-               label=kmodes_clustering.cluster_centroids_[c],
-               s=30, marker='.')
-ax.legend()
-plt.title('K-modes over first 2 Principal Components, with %i' % k + ' clusters')
-fig.savefig("Kdo")
-plt.show()
-
-# Print the cluster centroids
-print("The mode of each variable for each cluster:\n{}".format(kmodes_clustering.cluster_centroids_)) # This gives the mode of each variable for each cluster.
-df_cat_centroids = pd.DataFrame(kmodes_clustering.cluster_centroids_,
-                                   columns=df_Engage.columns)
-
-unique, counts = np.unique(kmodes_clustering.labels_, return_counts=True)
-cat_counts = pd.DataFrame(np.asarray((unique, counts)).T, columns=['Label', 'Number'])
-cat_centroids = pd.concat([df_Engage, cat_counts], axis=1)
-del cat_counts, k
-
-# The countplots and correlation matrix that were here
-# now are in the data_exploratory.py file
-
+#Check correlation matrix afer dropping correlated vars
+corr_plot(clust_df)
 
 #########################################################
 # ------------------- Standardization ----------------
@@ -683,9 +665,122 @@ del cat_counts, k
 # We are now going to scale the data so we can do effective clustering of our variables
 # Standardize the data to have a mean of ~0 and a variance of 1
 scaler = StandardScaler()
-X_std = scaler.fit_transform(df)
-X_std_df = pd.DataFrame(X_std, columns=df.columns, index=df.index)
-X_std_df.columns
+X_std = scaler.fit_transform(clust_df)
+X_std_df = pd.DataFrame(clust_df, columns=clust_df.columns)
+
+# ----------------------K-modes-------------------------
+# separate df into engage and consume
+df_Engage = df_cat.join(df['gross_monthly_salary'])
+df_Engage.dtypes
+
+# Converting gross_monthly_salary into categorical variable, using bins
+df_Engage['salary_bin'] = pd.cut(df_Engage['gross_monthly_salary'],
+                                 [0, 1000, 2000, 3000, 4000, 5000, 6000],
+                                 labels=['0-1k', '1k-2k', '2k-3k', '3k-4k', '4k-5k', '5k-6k'])
+# Drop 'gross_monthly_salary', since the goal is to perform K-modes
+df_Engage = df_Engage.drop('gross_monthly_salary', axis=1)
+
+# Take a look at the new df_Engage full categorical
+df_Engage.head()
+df_Engage['salary_bin'] = df_Engage['salary_bin'].astype(str)
+df_Engage.dtypes
+
+# Choosing K for kmodes by comparing Cost against each K. Copied from:
+# https://www.kaggle.com/ashydv/bank-customer-clustering-k-modes-clustering
+#https://medium.com/@davidmasse8/unsupervised-learning-for-categorical-data-dd7e497033ae
+cost = []
+for num_clusters in list(range(1, 5)):
+    kmode = KModes(n_clusters=num_clusters, init="Cao", n_init=1, verbose=1)
+    kmode.fit_predict(df_Engage)
+    cost.append(kmode.cost_)
+
+y = np.array([i for i in range(1, 5, 1)])
+plt.plot(y, cost)
+
+## ------  K-modes with k of 2
+kmodes_clustering = KModes(n_clusters=2, init='Cao', n_init=50, verbose=1)
+clusters_cat = kmodes_clustering.fit_predict(df_Engage)
+
+pca = PCA(3)
+# Turn the dummified df into two columns with PCA
+plot_columns = pca.fit_transform(X_std_df)
+LABEL_COLOR_MAP = {0 : 'r',
+                   1 : 'k',
+                   2 : 'b'}
+
+fig, ax = plt.subplots()
+for c in np.unique(clusters_cat):
+    ix = np.where(clusters_cat == c)
+    ax.scatter(plot_columns[:,1][ix], plot_columns[:,0][ix], c = LABEL_COLOR_MAP[c], label = kmodes_clustering.cluster_centroids_[c], s = 50, marker='.')
+ax.legend()
+fig.savefig("Kdo")
+plt.show()
+
+# Print the cluster centroids
+print("The mode of each variable for each cluster:\n{}".format(kmodes_clustering.cluster_centroids_)) #This gives the mode of each variable for each cluster.
+df_cat_centroids = pd.DataFrame(kmodes_clustering.cluster_centroids_,
+                                   columns=df_Engage.columns)
+
+unique, counts = np.unique(kmodes_clustering.labels_, return_counts=True)
+cat_counts = pd.DataFrame(np.asarray((unique, counts)).T, columns=['Label', 'Number'])
+cat_centroids = pd.concat([df_Engage, cat_counts], axis=1)
+del cat_counts
+
+
+
+# ------ Count-plot for customers by salary_bin and education level
+plt.figure()
+ax = sns.countplot(x=df_Engage['salary_bin'], hue='edu_desc', data=df_Engage,
+                   order=df_Engage['salary_bin'].value_counts().index,
+                   hue_order=['Basic', 'High School', 'BSc/MSc', 'PhD'])
+plt.legend(loc='upper right')
+
+for p in ax.patches:
+    ax.annotate(format(p.get_height(), '1.0f'),
+                (p.get_x() + p.get_width() / 2., p.get_height()),
+                ha='center', va='center', xytext=(0, 10), textcoords='offset points')
+
+plt.savefig('salary_bin_educ.png')
+# plt.show()
+# Most of the customers belong to the '1k-2k', '2k-3k', '3k-4k' bins
+# Most of the customers education level is High School and BSc/MSc
+# There is no correlation between education level and salary
+# So, education level should not be a valuable variable for the analysis
+
+# ------ Count-plot for customers by salary_bin and geographic_area
+plt.figure()
+
+df_plot = df_Engage.groupby(['salary_bin', 'geographic_area']).size().reset_index().pivot(columns='salary_bin',
+                                                                                          index='geographic_area',
+                                                                                          values=0)
+df_plot.plot(kind='bar', stacked=True)
+
+# With this plot we can determine 3 things:
+# 1. There are more customers in region 4
+# 2. Region 2 is the region with less customers
+# 3. The proportion of salary ranges is almost homogeneous over all the regions
+
+plt.savefig('salary_bin_geo.png')
+# plt.show()
+del df_plot
+# ------ Count-plot for customers by salary_bin and has_children
+plt.figure()
+
+df_plot = df_Engage.groupby(['salary_bin', 'has_children']).size().reset_index().pivot(columns='salary_bin',
+                                                                                       index='has_children', values=0)
+ax = df_plot.plot(kind='bar', stacked=True)
+
+# With this plot we can determine 2 main things:
+# 1. There are more customers with children: 7000 has children and 3000 does not.
+# 2. The proportion of higher salaries is higher over the customers with no children.
+
+# plt.show()
+del df_plot, df_Engage
+
+# Looking at the plots of categorical from the Engage data frame,
+# 1. The main variable in this data frame is salary.
+# 2. Age can be an important variable as well, but since a lot of the data is wrong
+# 	then is better not to trust in this variable.
 
 # --------------------- Re-Scale the data ----------------
 # # Re-scale df
@@ -725,7 +820,7 @@ plt.show()
 vhts  = BmuHitsView(12,12,"Hits Map",text_size=7)
 vhts.show(sm, anotate=True, onlyzeros=False, labelsize=10, cmap="autumn", logaritmic=False)
 
-plot_hex_map()
+#plot_hex_map()
 
 # K-Means Clustering
 sm.cluster(3)
@@ -734,7 +829,7 @@ a = hits.show(sm, labelsize=12)
 
 # ------------------------------------------------------
 # Applying Silhouette Analysis function over normalized df
-silhouette_analysis(X_std, 2, 6)
+silhouette_analysis(X_std, 2, 4)
 
 
 # ## Experiment with alternative clustering techniques
@@ -749,7 +844,7 @@ cmap = sns.diverging_palette(h_neg=210, h_pos=350, s=90, l=30, as_cmap=True)
 clustermap = sns.clustermap(data=corr, cmap="coolwarm")
 clustermap.savefig('corr_clustermap.png')
 
-descr=df.describe()
+descr=clust_df.describe()
 
 #sns.pairplot(data=corr, size=2)
 # ## Perform PCA
@@ -776,7 +871,7 @@ PCA_components = pd.DataFrame(principalComponents)
 # plt.xlabel('PCA 1')
 # plt.ylabel('PCA 2')
 # plt.show()
-n_cols = 6
+n_cols = 3
 
 ks = range(1, 10)
 inertias = []
@@ -799,7 +894,7 @@ plt.show()
 # ### we show a steep dropoff of inertia at k=6 so we can take k=6
 # ## Perform cluster analysis on PCA variables
 
-n_clusters = 6
+n_clusters = 3
 
 X = PCA_components.values
 labels = KMeans(n_clusters, random_state=0).fit_predict(X)
@@ -846,7 +941,7 @@ fig.savefig('all_methods_dendrogram.png'.format(method))
 plt.show()
 
 Z = linkage(final_clusters.drop('Lables', axis=1).values, 'ward')
-Z2 = linkage(X_std.drop('Lables', axis=1).values, 'centroid',optimal_ordering=True)
+Z2 = linkage(X_std, 'centroid',optimal_ordering=True)
 
 # Ward variance minimization algorithm
 
@@ -875,7 +970,7 @@ fig.savefig('{}_method_dendrogram.png'.format(method))
 # DBSCAN
 
 
-db = DBSCAN(eps=1, min_samples=10).fit(X_std)
+db = DBSCAN(eps=1, min_samples=15).fit(X_std)
 
 labels = db.labels_
 
@@ -1131,3 +1226,231 @@ centroids_dict = dict(zip(keys, centroids_list))
 labels_dict = dict(zip(keys, labels_list))
 print(" Labels: \n {} \n Centroids: \n {}".format(list(labels_dict[best_method]),
                                                   centroids_dict[best_method]))
+#########################################################
+# ---------------- Spectral Clustering ------------------
+#########################################################
+from sklearn.cluster import SpectralClustering
+from mpl_toolkits.mplot3d import Axes3D
+# 1) Choosing variables to perform clustering
+SC_df = df[['customer_monetary_value', 'claims_rate', 'premium_wage_ratio']]
+
+# 2) Standardize the data frame before performing Clustering
+scaler = StandardScaler()
+SC_std = scaler.fit_transform(SC_df)
+SC_std_df = pd.DataFrame(SC_std, columns=SC_df.columns, index=SC_df.index)
+
+# 3.a) Determine the correct number of clusters using the elbow plot
+elbow_plot(SC_std_df, 9)   # Let's try 3 clusters
+
+# The Spectral Clustering Method can be developed with 2 types of affinity.
+# We will use both types and compare the results to choose the best
+# 4.a) Using affinity = ‘rbf’ ( Kernel of the euclidean distanced )
+# Building the clustering model using affinity = ‘rbf’
+spectral_model_rbf = SpectralClustering(n_clusters=3, affinity='rbf')
+
+# Training the model and Storing the predicted cluster labels
+labels_rbf = spectral_model_rbf.fit_predict(SC_std_df)
+
+# 4.b) Using affinity = ‘nearest_neighbors’
+spectral_model_nn = SpectralClustering(n_clusters=3, affinity='nearest_neighbors')
+
+# Training the model and Storing the predicted cluster labels
+labels_nn = spectral_model_nn.fit_predict(SC_std_df)
+
+# 5.a) Plotting the results for rbf:
+# Building the label to colour mapping
+colours = {}
+colours[0] = 'b'
+colours[1] = 'g'
+colours[2] = 'r'
+colours[3] = 'c'
+colours[4] = 'm'
+colours[5] = 'y'
+colours[6] = 'b'
+
+# Building the colour vector for each data point
+cvec = [colours[label] for label in labels_rbf]
+
+# Plotting the clustered scatter plot
+fig = plt.figure()
+ax = fig.add_subplot(111, projection='3d')
+
+xs = [SC_std_df['customer_monetary_value']]
+ys = [SC_std_df['claims_rate']]
+zs = [SC_std_df['premium_wage_ratio']]
+
+ax.scatter(xs, ys, zs, c=cvec, marker='o')
+
+ax.set_xlabel('CMV')
+ax.set_ylabel('Claims Rate')
+ax.set_zlabel('PWR')
+
+plt.show()
+
+# 5.b) Plotting the results for nearest_neighbors:
+# Building the colour vector for each data point
+colours = {}
+colours[0] = 'b'
+colours[1] = 'g'
+colours[2] = 'r'
+colours[3] = 'c'
+colours[4] = 'm'
+colours[5] = 'y'
+colours[6] = 'b'
+
+# Building the colour vector for each data point
+cvec = [colours[label] for label in labels_nn]
+
+# Plotting the clustered scatter plot
+fig = plt.figure()
+ax = fig.add_subplot(111, projection='3d')
+
+xs = [SC_std_df['customer_monetary_value']]
+ys = [SC_std_df['claims_rate']]
+zs = [SC_std_df['premium_wage_ratio']]
+
+ax.scatter(xs, ys, zs, c=cvec, marker='o')
+
+ax.set_xlabel('CMV')
+ax.set_ylabel('Claims Rate')
+ax.set_zlabel('PWR')
+
+plt.show()
+
+#-------- Re-Scale the data before plotting -------------
+# Re-scale df
+# X_stdSC_df = X_stdSC_df.drop('Clusters', axis=1)  # It{s not ok
+scaler.inverse_transform(X=SC_std_df)
+SC_df = pd.DataFrame(scaler.inverse_transform(X=SC_std_df),
+                     columns=SC_std_df.columns, index=SC_std_df.index)
+# Add the clusters labels to SC_df
+SC_df = pd.DataFrame(pd.concat([SC_df, pd.DataFrame(labels_rbf)], axis=1))
+SC_df.columns = ['CMV', 'Claims Rate', 'PWR', 'Labels']
+SC_df.head()        # I think I'm loosing the Customer Identity code around here
+SC_df.dropna(inplace=True)
+
+del scaler, SC_std_df, SC_std
+
+
+
+#########################################################
+# ------------- Decision Tree Classifier ----------------
+#########################################################
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
+from sklearn.model_selection import train_test_split
+from IPython.display import Image           # Decision Tree Visualization
+from sklearn.externals.six import StringIO  # Decision Tree Visualization
+from sklearn.tree import export_graphviz    # Decision Tree Visualization
+import pydotplus   # Must be installed manually in anaconda prompt with: conda install pydotplus
+import pydot
+from sklearn import tree
+import collections
+
+from sklearn import metrics #Import scikit-learn metrics module for accuracy calculation
+
+
+
+# Define the target variable 'y'
+X = SC_df.drop('Labels', axis=1)
+y = SC_df[['Labels']]  # The target is the cluster label
+
+# Split up the data into a training set and a test set
+# 70% training and 30% test
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=1)
+
+# Create Decision Tree classifier object
+clf = DecisionTreeClassifier()
+
+# Define the parameters conditions for the Decision Tree
+# dtree = DecisionTreeClassifier(random_state=0, max_depth=None)
+# dtree = DecisionTreeClassifier(criterion='entropy')
+
+# Train the model
+clf = clf.fit(X_train, y_train)
+
+# Evaluation of the decision tree results
+predictions = clf.predict(X_test)
+
+conf_matrix = confusion_matrix(y_test, predictions)
+accuracy = accuracy_score(y_test, predictions)
+
+# Show confusion matrix
+conf_matrix
+
+# Show accuracy
+accuracy
+
+# Print a classification tree report
+print(classification_report(y_test, predictions))
+
+features = list(SC_df.columns[0:3])
+features
+
+# Plotting Decision Tree
+dot_data = StringIO()
+tree.export_graphviz(clf,
+                        out_file=dot_data,
+                        feature_names=features,
+                        filled=True,
+                        rounded=True,
+                        special_characters=True)
+graph = pydot.graph_from_dot_data(dot_data.getvalue())
+graph.write_png('Customers_clf_tree.png')
+Image(graph[0].create_png('Customers_clf_tree.png'))
+
+# Second try:
+dot_data = StringIO()
+tree.export_graphviz(clf,
+                     out_file=dot_data,
+                     feature_names=features,
+                     filled=True,
+                     rounded=True,
+                     impurity=False)
+
+# Draw graph
+graph = pydot.graph_from_dot_data(dot_data.getvalue())
+
+# Show graph
+Image(graph.create_png())
+
+# Create pdf
+graph.write_pdf('Customers_clf_tree.pdf')
+
+# Create png
+graph.write_png('Customers_clf_tree.png')
+
+
+
+Image(graph[0].create_pdf('Customers_clf_tree.pdf'))
+
+
+# colors = ('turquoise', 'orange')
+# edges = collections.defaultdict(list)
+
+# for edge in graph.get_edge_list():
+#     edges[edge.get_source()].append(int(edge.get_destination()))
+#
+# for edge in edges:
+#     edges[edge].sort()
+#     for i in range(2):
+#         dest = graph.get_node(str(edges[edge][i]))[0]
+#         dest.set_fillcolor(colors[i])
+
+
+
+# Convert to png
+from subprocess import call
+call(['dot', '-Tpng', 'tree.dot', '-o', 'tree.png', '-Gdpi=600'])
+
+# Display in jupyter notebook
+from IPython.display import Image
+Image(filename = 'tree.png')
+
+graph = pydotplus.graph_from_dot_data(dot_data.getvalue())
+Image(graph.create_png())
+
+graph = pydot.graph_from_dot_data(dot_data.getvalue())
+Image(graph[0].create_png())
+graph.write_png("DecisionTree.png")
+# ------------------------------------------------------

@@ -40,6 +40,7 @@ import logging
 # Session 2: query and join tables (sqlite3)
 # Session 3: explore data (describe, shape, info, unique, dtypes, sum, mean, head, tail, groupby, columns, iloc)
 # Session 4: continuation of session 3
+
 # Session 5 (Impute):
 #	from sklearn.impute import SimpleImputer
 # 	from sklearn.neighbors import KNeighborsClassifier
@@ -348,8 +349,6 @@ print("Original data frame length:",
 null_df = combined_df[combined_df.isna().any(axis=1)]
 # Drop rows with NA values
 df = combined_df.dropna(axis=0, how='any')
-combined_df.shape
-df.shape
 df.isnull().sum()
 # Defining each column type value with a  dictionary
 type_dict = {
@@ -748,8 +747,8 @@ del corr, mask, heatmap
 # Standardize the data to have a mean of ~0 and a variance of 1
 scaler = StandardScaler()
 X_std = scaler.fit_transform(df)
-X_std_df = pd.DataFrame(X_std, columns=df.columns)
-
+X_std_df = pd.DataFrame(X_std, columns=df.columns, index=df.index)
+X_std_df.columns
 
 # --------------------- Re-Scale the data ----------------
 # # Re-scale df
@@ -820,6 +819,7 @@ descr=df.describe()
 # "First of all Principal Component Analysis is a good name. It does what it says on the tin. PCA finds the principal components of data. ...
 # They are the directions where there is the most variance, the directions where the data is most spread out."
 # guide: https://medium.com/@dmitriy.kavyazin/principal-component-analysis-and-k-means-clustering-to-visualize-a-high-dimensional-dataset-577b2a7a5fe2
+
 # Create a PCA instance: pca
 pca = PCA(n_components=len(X_std_df.columns))
 principalComponents = pca.fit_transform(X_std)
@@ -833,7 +833,7 @@ plt.show()
 
 # Save components to a DataFrame
 PCA_components = pd.DataFrame(principalComponents)
-
+#
 # # plot scatter plot of pca
 # plt.scatter(PCA_components[0], PCA_components[1], alpha=.1, color='black')
 # plt.xlabel('PCA 1')
@@ -921,6 +921,7 @@ ax.tick_params(axis='y', which='major', labelsize=20)
 ax.set_title('{} Method Dendrogram'.format(method))
 fig.savefig('{}_method_dendrogram.png'.format(method))
 
+# ## Centroid Algorithm
 
 # Centroid Algorithm
 
@@ -935,6 +936,7 @@ ax.set_title('{} Method Dendrogram'.format(method))
 fig.savefig('{}_method_dendrogram.png'.format(method))
 
 # DBSCAN
+
 
 db = DBSCAN(eps=1, min_samples=10).fit(X_std)
 
@@ -1125,9 +1127,7 @@ def compare_init_methods(data, list_init_methods, K_n):
         centroids, labels = kmeans2(data, k=K_n, minit=init_method,iter=50)
         keys.append(init_method)
         centroids_list.append(centroids)
-        print(centroids)
         labels_list.append(labels)
-        print(labels)
         axs[index, 0].plot(data[labels == 0, 0], data[labels == 0, 1], 'ob',
                            data[labels == 1, 0], data[labels == 1, 1], 'or',
                            data[labels == 2, 0], data[labels == 2, 1], 'oy',
@@ -1194,3 +1194,234 @@ centroids_dict = dict(zip(keys, centroids_list))
 labels_dict = dict(zip(keys, labels_list))
 print(" Labels: \n {} \n Centroids: \n {}".format(list(labels_dict[best_method]),
                                                   centroids_dict[best_method]))
+#########################################################
+# ---------------- Spectral Clustering ------------------
+#########################################################
+from sklearn.cluster import SpectralClustering
+from mpl_toolkits.mplot3d import Axes3D
+# 1) Choosing variables to perform clustering
+SC_df = df[['customer_monetary_value', 'claims_rate', 'premium_wage_ratio']]
+
+# 2) Standardize the data frame before performing Clustering
+scaler = StandardScaler()
+X_std = scaler.fit_transform(SC_df)
+X_stdSC_df = pd.DataFrame(X_std, columns=SC_df.columns, index=SC_df.index)
+
+# 3.a) Determine the correct number of clusters using the elbow plot
+elbow_plot(X_stdSC_df, 9)   # Let's try 3 clusters
+
+# The Spectral Clustering Method can be developed with 2 types of affinity.
+# We will use both types and compare the results to choose the best
+# 4.a) Using affinity = ‘rbf’ ( Kernel of the euclidean distanced )
+# Building the clustering model using affinity = ‘rbf’
+spectral_model_rbf = SpectralClustering(n_clusters=3, affinity='rbf')
+
+# Training the model and Storing the predicted cluster labels
+labels_rbf = spectral_model_rbf.fit_predict(X_stdSC_df)
+
+# 4.b) Using affinity = ‘nearest_neighbors’
+spectral_model_nn = SpectralClustering(n_clusters=3, affinity='nearest_neighbors')
+
+# Training the model and Storing the predicted cluster labels
+labels_nn = spectral_model_nn.fit_predict(X_stdSC_df)
+
+# 5.a) Plotting the results for rbf:
+# Building the label to colour mapping
+colours = {}
+colours[0] = 'b'
+colours[1] = 'g'
+colours[2] = 'r'
+colours[3] = 'c'
+colours[4] = 'm'
+colours[5] = 'y'
+colours[6] = 'b'
+
+# Building the colour vector for each data point
+cvec = [colours[label] for label in labels_rbf]
+
+# Plotting the clustered scatter plot
+fig = plt.figure()
+ax = fig.add_subplot(111, projection='3d')
+
+xs = [X_stdSC_df['customer_monetary_value']]
+ys = [X_stdSC_df['claims_rate']]
+zs = [X_stdSC_df['premium_wage_ratio']]
+
+ax.scatter(xs, ys, zs, c=cvec, marker='o')
+
+ax.set_xlabel('CMV')
+ax.set_ylabel('Claims Rate')
+ax.set_zlabel('PWR')
+
+plt.show()
+
+# 5.b) Plotting the results for nearest_neighbors:
+# Building the colour vector for each data point
+colours = {}
+colours[0] = 'b'
+colours[1] = 'g'
+colours[2] = 'r'
+colours[3] = 'c'
+colours[4] = 'm'
+colours[5] = 'y'
+colours[6] = 'b'
+
+# Building the colour vector for each data point
+cvec = [colours[label] for label in labels_nn]
+
+# Plotting the clustered scatter plot
+fig = plt.figure()
+ax = fig.add_subplot(111, projection='3d')
+
+xs = [X_stdSC_df['customer_monetary_value']]
+ys = [X_stdSC_df['claims_rate']]
+zs = [X_stdSC_df['premium_wage_ratio']]
+
+ax.scatter(xs, ys, zs, c=cvec, marker='o')
+
+ax.set_xlabel('CMV')
+ax.set_ylabel('Claims Rate')
+ax.set_zlabel('PWR')
+
+plt.show()
+
+#-------- Re-Scale the data before plotting -------------
+# Re-scale df
+# X_stdSC_df = X_stdSC_df.drop('Clusters', axis=1)  # It{s not ok
+scaler.inverse_transform(X=X_stdSC_df)
+SC_df = pd.DataFrame(scaler.inverse_transform(X=X_stdSC_df),
+                     columns=X_stdSC_df.columns, index=X_stdSC_df.index)
+# Add the clusters labels to SC_df
+SC_df = pd.DataFrame(pd.concat([SC_df, pd.DataFrame(labels_rbf)], axis=1))
+SC_df.columns = ['CMV', 'Claims Rate', 'PWR', 'Labels']
+SC_df.head()        # I think I'm loosing the Customer Identity code around here
+SC_df.dropna(inplace=True)
+
+del scaler, X_stdSC_df, X_std
+
+
+
+#########################################################
+# ------------- Decision Tree Classifier ----------------
+#########################################################
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
+from sklearn.model_selection import train_test_split
+from IPython.display import Image           # Decision Tree Visualization
+from sklearn.externals.six import StringIO  # Decision Tree Visualization
+from sklearn.tree import export_graphviz    # Decision Tree Visualization
+import pydotplus   # Must be installed manually in anaconda prompt with: conda install pydotplus
+import pydot
+from sklearn import tree
+import collections
+
+
+
+
+from sklearn import metrics #Import scikit-learn metrics module for accuracy calculation
+
+
+
+# Define the target variable 'y'
+X = SC_df.drop('Labels', axis=1)
+y = SC_df[['Labels']]  # The target is the cluster label
+
+# Split up the data into a training set and a test set
+# 70% training and 30% test
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=1)
+
+# Create Decision Tree classifier object
+clf = DecisionTreeClassifier()
+
+# Define the parameters conditions for the Decision Tree
+# dtree = DecisionTreeClassifier(random_state=0, max_depth=None)
+# dtree = DecisionTreeClassifier(criterion='entropy')
+
+# Train the model
+clf = clf.fit(X_train, y_train)
+
+# Evaluation of the decision tree results
+predictions = clf.predict(X_test)
+
+conf_matrix = confusion_matrix(y_test, predictions)
+accuracy = accuracy_score(y_test, predictions)
+
+# Show confusion matrix
+conf_matrix
+
+# Show accuracy
+accuracy
+
+# Print a classification tree report
+print(classification_report(y_test, predictions))
+
+features = list(SC_df.columns[0:3])
+features
+
+# Plotting Decision Tree
+dot_data = StringIO()
+tree.export_graphviz(clf,
+                        out_file=dot_data,
+                        feature_names=features,
+                        filled=True,
+                        rounded=True,
+                        special_characters=True)
+graph = pydot.graph_from_dot_data(dot_data.getvalue())
+graph.write_png('Customers_clf_tree.png')
+Image(graph[0].create_png('Customers_clf_tree.png'))
+
+# Second try:
+dot_data = StringIO()
+tree.export_graphviz(clf,
+                     out_file=dot_data,
+                     feature_names=features,
+                     filled=True,
+                     rounded=True,
+                     impurity=False)
+
+# Draw graph
+graph = pydot.graph_from_dot_data(dot_data.getvalue())
+
+# Show graph
+Image(graph.create_png())
+
+# Create pdf
+graph.write_pdf('Customers_clf_tree.pdf')
+
+# Create png
+graph.write_png('Customers_clf_tree.png')
+
+
+
+Image(graph[0].create_pdf('Customers_clf_tree.pdf'))
+
+
+# colors = ('turquoise', 'orange')
+# edges = collections.defaultdict(list)
+
+# for edge in graph.get_edge_list():
+#     edges[edge.get_source()].append(int(edge.get_destination()))
+#
+# for edge in edges:
+#     edges[edge].sort()
+#     for i in range(2):
+#         dest = graph.get_node(str(edges[edge][i]))[0]
+#         dest.set_fillcolor(colors[i])
+
+
+
+# Convert to png
+from subprocess import call
+call(['dot', '-Tpng', 'tree.dot', '-o', 'tree.png', '-Gdpi=600'])
+
+# Display in jupyter notebook
+from IPython.display import Image
+Image(filename = 'tree.png')
+
+graph = pydotplus.graph_from_dot_data(dot_data.getvalue())
+Image(graph.create_png())
+
+graph = pydot.graph_from_dot_data(dot_data.getvalue())
+Image(graph[0].create_png())
+graph.write_png("DecisionTree.png")
+# ------------------------------------------------------

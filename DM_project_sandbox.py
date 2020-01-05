@@ -109,7 +109,7 @@ import logging
 # Selecting the number of clusters with silhouette analysis
 # Reference:
 # https://scikit-learn.org/stable/auto_examples/cluster/plot_kmeans_silhouette_analysis.html
-
+logging.getLogger('matplotlib.font_manager').disabled = True
 def silhouette_analysis(df_in, n, m):
     '''
     Selecting the number of clusters with
@@ -218,6 +218,11 @@ def IQR_drop_outliers(df_in, qtl_1, qtl_2):
     df_outliers = df_in[((df_in < lower_range) | (df_in > upper_range)).any(axis=1)]
     return df_out, df_outliers
 
+# Reference:
+# https://medium.com/@prashant.nair2050/hands-on-outlier-detection-and-treatment-in-python-using-1-5-iqr-rule-f9ff1961a414
+# We are now going to scale the data so we can do effective clustering of our variables
+# Standardize the data to have a mean of ~0 and a variance of 1
+
 
 def corr_plot(data):
     corr = data.corr()
@@ -237,20 +242,47 @@ def corr_plot(data):
                           cbar_kws={'shrink': 0.4,
                                     'ticks': [-1, -.5, 0, 0.5, 1]},
                           vmin=-1,
-                          vmax=1,
-                          annot=True)
+                          vmax=1)
     # add the column names as labels
-    ax.set_yticklabels(corr.columns, rotation=0)
-    ax.set_xticklabels(corr.columns)
+    ax.set_yticklabels(corr.columns)
+    ax.set_xticklabels(corr.columns,rotation=45)
     sns.set_style({'xtick.bottom': True}, {'ytick.left': True})
     del corr, mask, heatmap
 
+# run different initialisation methods and optimal k value(elbow)
 
-# Reference:
-# https://medium.com/@prashant.nair2050/hands-on-outlier-detection-and-treatment-in-python-using-1-5-iqr-rule-f9ff1961a414
-# We are now going to scale the data so we can do effective clustering of our variables
-# Standardize the data to have a mean of ~0 and a variance of 1
+def elbow_plot(data,max_k):
+    """
+    This function returns a plot and prints a dataframe of plot values.
+    data: original data DataFrame
+    max_k: integer representing the max of the range of values of k from [1,k]
+    """
 
+    # elbow
+    cluster_range = range(1,max_k)
+    sse = {}
+    for k in cluster_range:
+        kmeans = KMeans(n_clusters=k,
+                    random_state=0,
+                    n_init = 50,
+                    max_iter = 300).fit(data)
+        #data["Clusters"] = kmeans.labels_
+        sse[k] = kmeans.inertia_
+        # Inertia: Sum of distances of samples to their closest cluster center
+    plt.figure(figsize=(8,5))
+    plt.plot(list(sse.keys()), list(sse.values()),
+             linewidth=1.5,
+             linestyle="-",
+             marker = "X",
+             markeredgecolor="salmon",
+             color = "black")
+    plt.title ("K-Means elbow graph", loc = "left",fontweight = "bold")
+    plt.xlabel("Number of cluster")
+    plt.ylabel("SSE")
+    plt.axvline(x = 4, alpha = 0.4, color = "salmon", linestyle = "--")
+    plt.show()
+    clusters_df = pd.DataFrame.from_dict(sse,orient='index',columns=['Inertia'])
+    print (clusters_df)
 
 # -------------- Querying the database file
 
@@ -634,13 +666,14 @@ clust_df.drop(['policy_creation_year'], axis=1, inplace=True)
 clust_df.drop(['total_premiums'], axis=1, inplace=True)
 
 #after correlation analysis we decide to drop this variable
-clust_df.drop('number_active_premiums',axis=1,inplace=True)
+clust_df.drop('active_premiums',axis=1,inplace=True)
 
 #since claims_rate, customer_monetary_value,amt_paidby_comp and cust_acq_cost are highly correlated with each other
 #mainly because they are mainly linear combinations of each other, we decide to keep customer aquisition cost since it is the most informative for the insurance industry
-clust_df.drop('claims_rate', axis=1, inplace=True)
+# clust_df.drop('claims_rate', axis=1, inplace=True)
 clust_df.drop('customer_monetary_value',axis=1,inplace=True)
 clust_df.drop('amt_paidby_comp',axis=1,inplace=True)
+clust_df.drop('cust_tenure',axis=1,inplace=True)
 
 
 #we decide to make the other premium values as a pct of total premiums to capture that information here
@@ -668,6 +701,14 @@ scaler = StandardScaler()
 X_std = scaler.fit_transform(clust_df)
 X_std_df = pd.DataFrame(clust_df, columns=clust_df.columns)
 
+# split main std Dataframe into products and value dataframes
+
+X_prod_std_df = X_std_df[['motor_premiums_pct', 'household_premiums_pct',
+       'health_premiums_pct', 'life_premiums_pct', 'work_premiums_pct']]
+
+X_value_std_df = X_std_df[['cancelled_premiums_pct','claims_rate', 'cust_acq_cost',
+       'premium_wage_ratio']]
+
 # ----------------------K-modes-------------------------
 # separate df into engage and consume
 df_Engage = df_cat.join(df['gross_monthly_salary'])
@@ -693,17 +734,18 @@ for num_clusters in list(range(1, 5)):
     kmode = KModes(n_clusters=num_clusters, init="Cao", n_init=1, verbose=1)
     kmode.fit_predict(df_Engage)
     cost.append(kmode.cost_)
-
+plt.Figure()
 y = np.array([i for i in range(1, 5, 1)])
 plt.plot(y, cost)
+plt.show()
 
 ## ------  K-modes with k of 2
 kmodes_clustering = KModes(n_clusters=2, init='Cao', n_init=50, verbose=1)
 clusters_cat = kmodes_clustering.fit_predict(df_Engage)
 
-pca = PCA(3)
+pca = PCA(2)
 # Turn the dummified df into two columns with PCA
-plot_columns = pca.fit_transform(X_std_df)
+plot_columns = pca.fit_transform(X_value_std_df)
 LABEL_COLOR_MAP = {0 : 'r',
                    1 : 'k',
                    2 : 'b'}
@@ -802,10 +844,10 @@ sm = SOMFactory().build(data = X_std,
                lattice = 'hexa',#'rect','hexa'
                training = 'batch')#'seq','batch'
 
-sm.train(n_job=10,
+sm.train(n_job=4,
          verbose='info',
          train_rough_len=30,
-         train_finetune_len=100)
+         train_finetune_len=50)
 
 final_clusters = pd.DataFrame(sm._data, columns = X_std_df.columns)
 my_labels = pd.DataFrame(sm._bmu[0])
@@ -823,13 +865,13 @@ vhts.show(sm, anotate=True, onlyzeros=False, labelsize=10, cmap="autumn", logari
 #plot_hex_map()
 
 # K-Means Clustering
-sm.cluster(3)
+sm.cluster(5)
 hits  = HitMapView(10,10,"Clustering",text_size=7)
 a = hits.show(sm, labelsize=12)
 
 # ------------------------------------------------------
 # Applying Silhouette Analysis function over normalized df
-silhouette_analysis(X_std, 2, 4)
+silhouette_analysis(X_std, 2, 5)
 
 
 # ## Experiment with alternative clustering techniques
@@ -850,6 +892,8 @@ descr=clust_df.describe()
 # ## Perform PCA
 # "First of all Principal Component Analysis is a good name. It does what it says on the tin. PCA finds the principal components of data. ...
 # They are the directions where there is the most variance, the directions where the data is most spread out."
+# We try to perform Factor Analysis1 in order to extract the underlying factors of all vars, and then perform k-means on the obtained factors.
+# A disadvantage of this procedure might be the difficult interpretability of the factor
 # guide: https://medium.com/@dmitriy.kavyazin/principal-component-analysis-and-k-means-clustering-to-visualize-a-high-dimensional-dataset-577b2a7a5fe2
 
 # Create a PCA instance: pca
@@ -861,16 +905,18 @@ plt.bar(features, pca.explained_variance_ratio_, color='black')
 plt.xlabel('PCA features')
 plt.ylabel('Variance %')
 plt.show()
-# plt.clf()
 
 # Save components to a DataFrame
 PCA_components = pd.DataFrame(principalComponents)
-#
-# # plot scatter plot of pca
-# plt.scatter(PCA_components[0], PCA_components[1], alpha=.1, color='black')
-# plt.xlabel('PCA 1')
-# plt.ylabel('PCA 2')
-# plt.show()
+
+# plot scatter plot of pca
+plt.scatter(PCA_components[0], PCA_components[1], alpha=.1, color='black')
+plt.xlabel('PC 1')
+plt.ylabel('PC 2')
+plt.title('PCA plot')
+plt.show()
+
+# Most of the variance is captured by the first 4 Principal Components therefore we perform kmeans with that
 n_cols = 3
 
 ks = range(1, 10)
@@ -894,14 +940,19 @@ plt.show()
 # ### we show a steep dropoff of inertia at k=6 so we can take k=6
 # ## Perform cluster analysis on PCA variables
 
-n_clusters = 3
+n_clusters = 4
 
 X = PCA_components.values
 labels = KMeans(n_clusters, random_state=0).fit_predict(X)
 
-fig, ax = plt.subplots(figsize=(15, 15))
-ax.scatter(X[:, 0], X[:, 1], c=labels,
+# ax.set_title("Kmean on the main {} PCs".format(n__cols))
+plt.scatter(X[:, 0], X[:, 1], c=labels,
            s=30, cmap='viridis', marker='.')
+plt.xlabel("PC1")
+plt.ylabel("PC2")
+plt.title("KMeans using PCs and {} clusters".format(n_clusters))
+plt.show()
+
 
 # add legend
 # txts = df.index.values
@@ -940,10 +991,13 @@ for n, method in enumerate(methods):
 fig.savefig('all_methods_dendrogram.png'.format(method))
 plt.show()
 
+# perform hierarchical clustering on the output of the SOM
 Z = linkage(final_clusters.drop('Lables', axis=1).values, 'ward')
+
+# perform hierarchical clustering on clustering df
 Z2 = linkage(X_std, 'centroid',optimal_ordering=True)
 
-# Ward variance minimization algorithm
+# Ward variance minimization algorithm provides the most clear clusters
 
 method = "ward"
 fig = plt.figure(figsize=(30, 20))
@@ -1002,10 +1056,10 @@ for i in range(0, pca_2d.shape[0]):
     elif db.labels_[i] == -1:
         c3 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='b', marker='*')
 
-plt.legend([c1, c2, c4, c5, c6, c7, c3],
-           ['Cluster 1', 'Cluster 2', 'Cluster 3', 'Cluster 4', 'Cluster 5', 'Cluster 6', 'Noise'])
-plt.title('DBSCAN finds 6 clusters and noise')
-fig.savefig('DBSCAN finds 6 clusters and noise.png')
+plt.legend([c1, c2, c4, c5,c6, c3],
+           ['Cluster 1', 'Cluster 2', 'Cluster 3', 'Cluster 4','Cluster 5', 'Noise'])
+plt.title('DBSCAN finds 5 clusters and noise')
+fig.savefig('DBSCAN finds 5 clusters and noise.png')
 plt.show()
 
 # plt.clf()
@@ -1043,82 +1097,170 @@ ax.set_ylabel('PCA 2')
 ax.set_zlabel('PCA 3')
 
 
-# # The following bandwidth can be automatically detected using
-# my_bandwidth = estimate_bandwidth(X_std,
-#                                   quantile=0.1,
-#                                   n_samples=1000)
-#
-# ms = MeanShift(bandwidth=my_bandwidth,
-#                # bandwidth=0.15,
-#                bin_seeding=True)
-#
-# ms.fit(X_std)
-# labels = ms.labels_
-# cluster_centers = ms.cluster_centers_
-#
-# labels_unique = np.unique(labels)
-# n_clusters_ = len(labels_unique)
-#
-# # Values
-# scaler.inverse_transform(X=cluster_centers)
-#
-# # Count
-# unique, counts = np.unique(labels, return_counts=True)
-#
-# print(np.asarray((unique, counts)).T)
-#
-# # lets check our are they distributed
-# pca = PCA(n_components=2).fit(X_std_df)
-# pca_2d = pca.transform(X_std_df)
-# for i in range(0, pca_2d.shape[0]):
-#     if labels[i] == 0:
-#         c1 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1],s=None, c='r')
-#     elif labels[i] == 1:
-#         c2 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1],s=None, c='g')
-#     elif labels[i] == 2:
-#         c3 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='b', marker='*')
-#
-# # plt.legend([c1, c2, c3], ['Cluster 1', 'Cluster 2', 'Cluster 3 '])
-# # plt.title('Mean Shift found 3 clusters')
-# plt.legend([c1, c2], ['Cluster 1', 'Cluster 2'])
-# plt.title('Mean Shift found 2 clusters')
-# plt.show()
-# #plt.clf()
-#
-# # 3D
-# pca = PCA(n_components=3).fit(X_std)
-# pca_3d = pca.transform(X_std)
-# # Add my visuals
-# my_color = []
-# my_marker = []
-# # Load my visuals
+# 1) Estimate bandwith:
+# The following bandwidth can be automatically estimated using
+my_bandwidth = estimate_bandwidth(X_value_std_df,
+                                  quantile=0.3,  # Quantile of all the distances/ 0.3 is the default
+                                  n_samples=500)
+
+# 2)Create an object for Mean Shift:
+ms = MeanShift(bandwidth=my_bandwidth,
+               # bandwidth=0.15,
+               bin_seeding=True)
+
+# # 3) Apply Mean Shift to data frame:
+ms.fit(X_value_std_df)
+
+# 3) Apply Mean Shift to the SOM data frame:
+# ms.fit(final_clusters.drop('Lables', axis=1))
+
+# 3.1) Get lables
+ms_labels = ms.labels_
+# 3.2) Get clusters centers
+ms_cluster_centers = ms.cluster_centers_
+
+# 3.3) Count the number of unique labels (clusters)
+ms_labels_unique = np.unique(labels)
+n_clusters_ = len(ms_labels_unique)
+
+# # 4) Re-scale the cluster_centers
+# scaler.inverse_transform(X=ms_cluster_centers)
+
+# 5) Count what?
+ms_unique, ms_counts = np.unique(ms_labels, return_counts=True)
+
+print(np.asarray((ms_unique, ms_counts)).T)
+
+# Let's check how are they distributed
+# 6) Apply PCA to reduce dimensionality:
+
+# 6.1) PCA with 2 principal components:
+# Visualising the clusters
+fig = plt.figure(figsize=(30, 20))
+pca = PCA(n_components=2).fit(X_value_std_df)  # fit to 2 principal components
+pca_2d = pca.transform(X_value_std_df)
+
+# Set a marker and a color to each label (cluster)
+for i in range(0, pca_2d.shape[0]):
+    if ms_labels[i] == 0:
+        c1 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='r', marker='+')
+    elif ms_labels[i] == 1:
+        c2 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='g', marker='o')
+    elif ms_labels[i] == 2:
+        c3 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='b', marker='*')
+    elif ms_labels[i] == 3:
+        c4 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='y', marker='s')
+    elif ms_labels[i] == 4:
+        c5 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='m', marker='p')
+    elif ms_labels[i] == 5:
+        c6 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='c', marker='H')
+    elif ms_labels[i] == 6:
+        c7 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='k', marker='o')
+plt.legend([c1, c2]#c3, c4, c5, c6],
+           ,['Cluster 1', 'Cluster 2']) #'Cluster 3', 'Cluster 4', 'Cluster 5', 'Cluster 6', 'Cluster 7'])
+plt.title('Mean Shift found  %i' % n_clusters_ + ' clusters')
+plt.show()
+
+# 6.2) PCA with 3 principal components:
+pca = PCA(n_components=3).fit(X_std_df)  # fit to 3 principal components
+pca_3d = pca.transform(X_std_df)
+# Add my visuals
+my_color = []
+my_marker = []
+# Load my visuals
+# Set a marker and a color to each label (cluster)
+for i in range(pca_3d.shape[0]):
+    if labels[i] == 0:
+        my_color.append('r')
+        my_marker.append('+')
+    elif labels[i] == 1:
+        my_color.append('g')
+        my_marker.append('o')
+    elif labels[i] == 2:
+        my_color.append('b')
+        my_marker.append('*')
+    elif labels[i] == 3:
+        my_color.append('y')
+        my_marker.append('s')
+    elif labels[i] == 4:
+        my_color.append('m')
+        my_marker.append('p')
+    elif labels[i] == 5:
+        my_color.append('c')
+        my_marker.append('H')
+    elif labels[i] == 6:
+        my_color.append('k')
+        my_marker.append('o')
+
+fig = plt.figure()
+ax = fig.add_subplot(111, projection='3d')
+
 # for i in range(pca_3d.shape[0]):
-#     if labels[i] == 0:
-#         my_color.append('r')
-#         my_marker.append('+')
-#     elif labels[i] == 1:
-#         my_color.append('b')
-#         my_marker.append('o')
-#     elif labels[i] == 2:
-#         my_color.append('g')
-#         my_marker.append('*')
-#     elif labels[i] == 3:
-#         my_color.append('k')
-#         my_marker.append('<')
-#
-# fig = plt.figure()
-# ax = fig.add_subplot(111, projection='3d')
-#
-# # for i in range(pca_3d.shape[0]):
-# for i in range(250):
-#     ax.scatter(pca_3d[i, 0],
-#                pca_3d[i, 1],
-#                pca_3d[i, 2], c=my_color[i], marker=my_marker[i])
-#
-# ax.set_xlabel('PCA 1')
-# ax.set_ylabel('PCA 2')
-# ax.set_zlabel('PCA 3')
-#
+for i in range(250):
+    ax.scatter(pca_3d[i, 0],
+               pca_3d[i, 1],
+               pca_3d[i, 2], c=my_color[i], marker=my_marker[i])
+
+ax.set_xlabel('PCA 1')
+ax.set_ylabel('PCA 2')
+ax.set_zlabel('PCA 3')
+
+# --------------- PCA analysis ---------------------------
+# Performing complete PCA analysis, with all components
+pca_init = PCA()
+pca = pca_init.fit(X_std_df)
+n_components = X_std_df.shape[1]
+
+# Showing the percentage explained by each compomonent and 
+# and the cumulative sum of this percentage on a table
+pca_board = pd.DataFrame({"Explained var. (%)": np.round(pca.explained_variance_ratio_ * 100, decimals=1),
+                          "Cumulative var. (%)": np.round(np.cumsum(pca.explained_variance_ratio_ * 100), decimals=2)})
+pca_board.index.name = 'PC'
+pca_board.index += 1
+
+print("{}\n".format(pca_board))
+pca_index = []
+
+for i in range(1, len(X_std_df.columns) + 1):
+    pca_index.append('PC' + str(i))
+
+print(pd.DataFrame(pca.components_,
+                   columns=X_std_df.columns,
+                   index=pca_index))
+
+# Plotting the Cumulative Sum of the Explained Variance
+plt.figure()
+pc_nr = len(pca.explained_variance_ratio_)
+x_pos = np.arange(1, pc_nr + 1)
+plt.plot(x_pos, np.cumsum(pca.explained_variance_ratio_),
+         color='orange',
+         label='Cumulative exp. var.')
+
+plt.bar(x_pos, pca.explained_variance_ratio_,
+        label='Individual exp. var.')
+
+plt.xlabel('Number of component')
+plt.ylabel('Variance (%)')  # for each component
+plt.title('Individual and cumulative explained variance')
+plt.legend(loc='center right', frameon=True)
+plt.show()
+
+# Plotting the contribution of each variable to the PCA
+plt.matshow(pca.components_, cmap='Spectral_r')
+
+pca_index = []
+for i in range(1, len(X_std_df.columns) + 1):
+    pca_index.append('PC' + str(i))
+
+tick_list = []
+for i in range(0, len(X_std_df.columns)):
+    tick_list.append(i)
+
+plt.yticks(tick_list, pca_index, fontsize=10)
+plt.colorbar()
+plt.xticks(range(len(X_std_df.columns)), X_std_df.columns, rotation=65, ha='left')
+plt.tight_layout()
+plt.show()
 
 
 gmm = mixture.GaussianMixture(n_components= 5,
@@ -1173,42 +1315,6 @@ def compare_init_methods(data, list_init_methods, K_n):
         axs[index, 1].plot(centroids[:, 2], centroids[:, 3], 'sk', markersize=5)
         axs[index, 0].set_title("Method:{}".format(init_method), y=0.7)
     return keys, centroids_list, labels_list
-
-
-# run different initialisation methods and optimal k value(elbow)
-
-def elbow_plot(data,max_k):
-    """
-    This function returns a plot and prints a dataframe of plot values.
-    data: original data DataFrame
-    max_k: integer representing the max of the range of values of k from [1,k]
-    """
-
-    # elbow
-    cluster_range = range(1,max_k)
-    sse = {}
-    for k in cluster_range:
-        kmeans = KMeans(n_clusters=k,
-                    random_state=0,
-                    n_init = 50,
-                    max_iter = 300).fit(data)
-        #data["Clusters"] = kmeans.labels_
-        sse[k] = kmeans.inertia_
-        # Inertia: Sum of distances of samples to their closest cluster center
-    plt.figure(figsize=(8,5))
-    plt.plot(list(sse.keys()), list(sse.values()),
-             linewidth=1.5,
-             linestyle="-",
-             marker = "X",
-             markeredgecolor="salmon",
-             color = "black")
-    plt.title ("K-Means elbow graph", loc = "left",fontweight = "bold")
-    plt.xlabel("Number of cluster")
-    plt.ylabel("SSE")
-    plt.axvline(x = 4, alpha = 0.4, color = "salmon", linestyle = "--")
-    plt.show()
-    clusters_df = pd.DataFrame.from_dict(sse,orient='index',columns=['Inertia'])
-    print (clusters_df)
 
 
 k_max = 8

@@ -1,38 +1,3 @@
-# Import packages
-import sqlite3
-import pandas as pd
-import numpy as np
-from datetime import date
-import scipy.cluster.hierarchy as clust_hier
-from scipy import stats
-from scipy.cluster.hierarchy import dendrogram, linkage
-from matplotlib import pyplot as plt
-import matplotlib.font_manager
-from pandas.util.testing import assert_frame_equal
-from sklearn.cluster import KMeans, DBSCAN
-from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler
-import seaborn as sns
-from collections import defaultdict
-from matplotlib.colors import rgb2hex, colorConverter
-from itertools import combinations
-from sklearn.cluster import MeanShift, estimate_bandwidth
-from mpl_toolkits.mplot3d import Axes3D
-from matplotlib import cm
-from scipy.cluster.vq import kmeans2
-import os
-from kmodes.kmodes import KModes
-from sklearn import mixture
-from sklearn.metrics import silhouette_samples
-from sklearn.metrics import silhouette_score
-from sompy.sompy import SOMFactory
-from sompy.visualization.bmuhits import BmuHitsView
-from sompy.visualization.mapview import View2D
-from sompy.visualization.hitmap import HitMapView
-from sompy.visualization.plot_tools import plot_hex_map
-
-import logging
-
 # This is a summary of the labs sessions topics we’ve covered
 # Just to put checkmarks on the techniques we are using in this project:
 
@@ -105,11 +70,46 @@ import logging
 #	from dtreeplt import dtreeplt
 #	import graphviz
 
+# Import packages
+import sqlite3
+import pandas as pd
+import numpy as np
+from datetime import date
+import scipy.cluster.hierarchy as clust_hier
+from scipy import stats
+from scipy.cluster.hierarchy import dendrogram, linkage
+from matplotlib import pyplot as plt
+import matplotlib.font_manager
+from pandas.util.testing import assert_frame_equal
+from sklearn.cluster import KMeans, DBSCAN
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
+import seaborn as sns
+from collections import defaultdict
+from matplotlib.colors import rgb2hex, colorConverter
+from itertools import combinations
+from sklearn.cluster import MeanShift, estimate_bandwidth
+from mpl_toolkits.mplot3d import Axes3D
+from matplotlib import cm
+from scipy.cluster.vq import kmeans2
+import os
+from kmodes.kmodes import KModes
+from sklearn import mixture
+from sklearn.metrics import silhouette_samples
+from sklearn.metrics import silhouette_score
+from sompy.sompy import SOMFactory
+from sompy.visualization.bmuhits import BmuHitsView
+from sompy.visualization.mapview import View2D
+from sompy.visualization.hitmap import HitMapView
+from sompy.visualization.plot_tools import plot_hex_map
+import logging
+
 #defining functions to be used further down
 
 # Selecting the number of clusters with silhouette analysis
 # Reference:
 # https://scikit-learn.org/stable/auto_examples/cluster/plot_kmeans_silhouette_analysis.html
+
 def silhouette_analysis(df_in, n, m):
     '''
     Selecting the number of clusters with
@@ -517,12 +517,12 @@ df.drop('birth_year', axis=1, inplace=True)
 # it's possible to obtain extra valuable information.
 
 # #create feature for number of active premiums per customer
-df['number_active_premiums']=df[['motor_premiums', 'household_premiums', 'health_premiums',
+df['active_premiums']=df[['motor_premiums', 'household_premiums', 'health_premiums',
         'life_premiums', 'work_premiums']].gt(0).sum(axis=1)
 
 #create feature for number of premiums cancelled this year but were active the previous year per customer
 #a negative number for the premium indicates a reversal i.e. that a policy was active the previous year but canceled this year
-#after correlation analysis we decide to make this a pct of total active premiums (5)
+#after correlation analysis we decide to make this a pct of total active premiums last year (5)
 df['cancelled_premiums_pct']=df[['motor_premiums', 'household_premiums', 'health_premiums',
        'life_premiums', 'work_premiums']].lt(0).sum(axis=1)/df[['motor_premiums', 'household_premiums', 'health_premiums',
        'life_premiums', 'work_premiums']].ne(0).sum(axis=1)
@@ -560,7 +560,7 @@ df['amt_paidby_comp'] = df['claims_rate'] * df['total_premiums']
 #  we assumed Customer annual profit = total premiums - amt_paidby_comp and number of years as customer was the cust_tenure
 
 # # # Calculating the acquisition cost assuming claims_rate is the same as that over the last 2 yrs
-df['cust_acq_cost'] = df['amt_paidby_comp'] * df['cust_tenure'] - df['customer_monetary_value']
+df['cust_acq_cost'] = (df['total_premiums']-df['amt_paidby_comp']) * df['cust_tenure'] - df['customer_monetary_value']
 
 # Calculate the premium/wage proportion
 df['premium_wage_ratio'] = df['total_premiums'] / (df['gross_monthly_salary'] * 12)
@@ -601,10 +601,11 @@ qtl_2 = 0.99  # upper boundary
 
 # Apply box-plot function to the selected columns
 boxplot_all_columns(X_std_df, qtl_1, qtl_2)
+print(df.shape)
 
 # There are outliers, so let's remove them with the 'IQR_drop_outliers' function
 df, df_outliers = IQR_drop_outliers(df, qtl_1, qtl_2)
-
+print(df.shape)
 # Standardize the data after dropping the outliers
 scaler = StandardScaler()
 X_std = scaler.fit_transform(df.drop(categorical_cols, axis=1))
@@ -828,7 +829,7 @@ a = hits.show(sm, labelsize=12)
 
 # ------------------------------------------------------
 # Applying Silhouette Analysis function over normalized df
-silhouette_analysis(X_std, 2, 6)
+silhouette_analysis(X_std, 2, 4)
 
 
 # ## Experiment with alternative clustering techniques
@@ -969,7 +970,7 @@ fig.savefig('{}_method_dendrogram.png'.format(method))
 # DBSCAN
 
 
-db = DBSCAN(eps=1, min_samples=10).fit(X_std)
+db = DBSCAN(eps=1, min_samples=15).fit(X_std)
 
 labels = db.labels_
 
@@ -1235,11 +1236,11 @@ SC_df = df[['customer_monetary_value', 'claims_rate', 'premium_wage_ratio']]
 
 # 2) Standardize the data frame before performing Clustering
 scaler = StandardScaler()
-X_std = scaler.fit_transform(SC_df)
-X_stdSC_df = pd.DataFrame(X_std, columns=SC_df.columns, index=SC_df.index)
+SC_std = scaler.fit_transform(SC_df)
+SC_std_df = pd.DataFrame(SC_std, columns=SC_df.columns, index=SC_df.index)
 
 # 3.a) Determine the correct number of clusters using the elbow plot
-elbow_plot(X_stdSC_df, 9)   # Let's try 3 clusters
+elbow_plot(SC_std_df, 9)   # Let's try 3 clusters
 
 # The Spectral Clustering Method can be developed with 2 types of affinity.
 # We will use both types and compare the results to choose the best
@@ -1248,13 +1249,13 @@ elbow_plot(X_stdSC_df, 9)   # Let's try 3 clusters
 spectral_model_rbf = SpectralClustering(n_clusters=3, affinity='rbf')
 
 # Training the model and Storing the predicted cluster labels
-labels_rbf = spectral_model_rbf.fit_predict(X_stdSC_df)
+labels_rbf = spectral_model_rbf.fit_predict(SC_std_df)
 
 # 4.b) Using affinity = ‘nearest_neighbors’
 spectral_model_nn = SpectralClustering(n_clusters=3, affinity='nearest_neighbors')
 
 # Training the model and Storing the predicted cluster labels
-labels_nn = spectral_model_nn.fit_predict(X_stdSC_df)
+labels_nn = spectral_model_nn.fit_predict(SC_std_df)
 
 # 5.a) Plotting the results for rbf:
 # Building the label to colour mapping
@@ -1274,9 +1275,9 @@ cvec = [colours[label] for label in labels_rbf]
 fig = plt.figure()
 ax = fig.add_subplot(111, projection='3d')
 
-xs = [X_stdSC_df['customer_monetary_value']]
-ys = [X_stdSC_df['claims_rate']]
-zs = [X_stdSC_df['premium_wage_ratio']]
+xs = [SC_std_df['customer_monetary_value']]
+ys = [SC_std_df['claims_rate']]
+zs = [SC_std_df['premium_wage_ratio']]
 
 ax.scatter(xs, ys, zs, c=cvec, marker='o')
 
@@ -1304,9 +1305,9 @@ cvec = [colours[label] for label in labels_nn]
 fig = plt.figure()
 ax = fig.add_subplot(111, projection='3d')
 
-xs = [X_stdSC_df['customer_monetary_value']]
-ys = [X_stdSC_df['claims_rate']]
-zs = [X_stdSC_df['premium_wage_ratio']]
+xs = [SC_std_df['customer_monetary_value']]
+ys = [SC_std_df['claims_rate']]
+zs = [SC_std_df['premium_wage_ratio']]
 
 ax.scatter(xs, ys, zs, c=cvec, marker='o')
 
@@ -1319,16 +1320,16 @@ plt.show()
 #-------- Re-Scale the data before plotting -------------
 # Re-scale df
 # X_stdSC_df = X_stdSC_df.drop('Clusters', axis=1)  # It{s not ok
-scaler.inverse_transform(X=X_stdSC_df)
-SC_df = pd.DataFrame(scaler.inverse_transform(X=X_stdSC_df),
-                     columns=X_stdSC_df.columns, index=X_stdSC_df.index)
+scaler.inverse_transform(X=SC_std_df)
+SC_df = pd.DataFrame(scaler.inverse_transform(X=SC_std_df),
+                     columns=SC_std_df.columns, index=SC_std_df.index)
 # Add the clusters labels to SC_df
 SC_df = pd.DataFrame(pd.concat([SC_df, pd.DataFrame(labels_rbf)], axis=1))
 SC_df.columns = ['CMV', 'Claims Rate', 'PWR', 'Labels']
 SC_df.head()        # I think I'm loosing the Customer Identity code around here
 SC_df.dropna(inplace=True)
 
-del scaler, X_stdSC_df, X_std
+del scaler, SC_std_df, SC_std
 
 
 

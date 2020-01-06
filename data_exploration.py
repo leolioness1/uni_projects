@@ -17,6 +17,7 @@ from collections import defaultdict
 from matplotlib.colors import rgb2hex, colorConverter
 from itertools import combinations
 from sklearn.cluster import MeanShift, estimate_bandwidth
+from sklearn.cluster import SpectralClustering
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib import cm
 from scipy.cluster.vq import kmeans2
@@ -25,79 +26,83 @@ from kmodes.kmodes import KModes
 from sklearn import mixture
 from sklearn.metrics import silhouette_samples
 from sklearn.metrics import silhouette_score
+from sompy.sompy import SOMFactory
+from sompy.visualization.bmuhits import BmuHitsView
+from sompy.visualization.mapview import View2D
+from sompy.visualization.hitmap import HitMapView
+from sompy.visualization.plot_tools import plot_hex_map
+import logging
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
+from sklearn.model_selection import train_test_split
+from IPython.display import Image           # Decision Tree Visualization
+from sklearn.externals.six import StringIO  # Decision Tree Visualization
+from sklearn.tree import export_graphviz    # Decision Tree Visualization
+import pydotplus   # Must be installed manually in anaconda prompt with: conda install pydotplus
+from sklearn import tree
+import collections
+
+#defining functions to be used further down
+
+# Define the lower and upper quartiles boundaries for plotting the boxplots
+# and for dropping values. Numbers between (0,1) and qtl1 < qtl2
+
+def boxplot_all_columns(df_in, qtl_1, qtl_2):
+    """
+    qtl_1 is the lower quantile use to plot the boxplots. Number between (0,1)
+    qtl_2 is the upper quantile use to plot the boxplots. Number between (0,1)
+    """
+    sns.set(style="whitegrid")
+    fig, ax = plt.subplots(figsize=(15, 15))
+    ax = sns.boxplot(data=df_in, orient="h", palette="Set2", whis=[qtl_1, qtl_2])
+    plt.show()
 
 
-# This is a summary of the labs sessions topics we’ve covered
-# Just to put checkmarks on the techniques we are using in this project:
+# Define quartiles for plotting the boxplots and dropping rows
+def IQR_drop_outliers(df_in, qtl_1, qtl_2):
+    '''
+    qtl_1 is the lower quantile use to drop the rows. Number between (0, 1)
+    qtl_2 is the upper quantile use to drop the rows. Number between (0, 1)
+    '''
+    lower_range = df_in.quantile(qtl_1)
+    upper_range = df_in.quantile(qtl_2)
+    # df_out is filtered with values within the quartiles boundaries
+    df_out = df_in[~((df_in < lower_range) | (df_in > upper_range)).any(axis=1)]
+    df_outliers = df_in[((df_in < lower_range) | (df_in > upper_range)).any(axis=1)]
+    return df_out, df_outliers
 
-# Session 1: query a database (sqlite3)
-# Session 2: query and join tables (sqlite3)
-# Session 3: explore data (describe, shape, info, unique, dtypes, sum, mean, head, tail, groupby, columns, iloc)
-# Session 4: continuation of session 3
+# Reference:
+# https://medium.com/@prashant.nair2050/hands-on-outlier-detection-and-treatment-in-python-using-1-5-iqr-rule-f9ff1961a414
+# We are now going to scale the data so we can do effective clustering of our variables
+# Standardize the data to have a mean of ~0 and a variance of 1
 
-# Session 5 (Impute):
-#	from sklearn.impute import SimpleImputer
-# 	from sklearn.neighbors import KNeighborsClassifier
-#	from sklearn.neighbors import KNeighborsRegressor
 
-# Session 5 (Programming): Clustering
-#	minMax	(scale, normalization)
-#	from scipy.spatial.distance import Euclidean
+def corr_plot(data):
+    corr = data.corr()
 
-# Session 6 (Normalizing and PCA):
-#	from sklearn.preprocessing import MinMaxScaler
-#	from sklearn.preprocessing import StandardScaler
-#	from sklearn.decomposition import PCA
+    # Set Up Mask To Hide Upper Triangle
+    mask = np.zeros_like(corr, dtype=np.bool)
+    mask[np.triu_indices_from(mask)] = True
+    np.triu_indices_from(mask)
+    mask[np.triu_indices_from(mask)] = True
 
-# Session 7 (): correlation matrix, encoding:
-#	from sklearn.preprocessing import OneHotEncoder
-#	from sklearn import preprocessing
-#	le_status = preprocessing.LabelEncoder()
-
-# Session 8 (Encoding):
-# (transforming categorical to numerical) the status values of each customer
-#	from sklearn import preprocessing
-#	le_status = preprocessing.LabelEncoder()
-
-# Session 9 (Kmeans, Silhouttes):
-#	elbow_plot function
-#	silhouette
-#	Kmeans
-
-# Session 10 (Hier. Clustering, K-modes):
-#	from scipy.cluster.hierarchy import dendrogram, linkage
-#	from scipy.cluster import hierarchy
-#	from pylab import rcParams
-#	from sklearn.cluster import AgglomerativeClustering
-#	import sklearn.metrics as sm
-# 	from kmodes.kmodes import KModes
-
-# Session 11 (Classification tree):
-#	from sklearn.model_selection import cross_val_score
-#	from sklearn import tree
-#	from sklearn.tree import DecisionTreeClassifier, plot_tree
-#	from sklearn.model_selection import train_test_split # Import train_test_split function
-#	from sklearn import metrics #Import scikit-learn metrics module for accuracy calculation
-#	from dtreeplt import dtreeplt
-#	import graphviz
-
-# Session 12 (Self Organizing Map):
-#	from sompy.visualization.mapview import View2DPacked
-#	from sompy.visualization.mapview import View2D
-#	from sompy.visualization.bmuhits import BmuHitsView
-#	from sompy.visualization.hitmap import HitMapView
-
-# Session 13 (DB Scan & Mean Shift):
-#	from sklearn.cluster import DBSCAN
-#	from sklearn import metrics
-#	from sklearn.cluster import MeanShift, estimate_bandwidth
-
-# Session 14 (GaussianMixture):
-#	from sklearn import mixture
-
+    f, ax = plt.subplots(figsize=(10, 13))
+    heatmap = sns.heatmap(corr,
+                          mask=mask,
+                          square=True,
+                          linewidths=0.5,
+                          cmap='coolwarm',
+                          cbar_kws={'shrink': 0.4,
+                                    'ticks': [-1, -.5, 0, 0.5, 1]},
+                          vmin=-1,
+                          vmax=1)
+    # add the column names as labels
+    ax.set_yticklabels(corr.columns)
+    ax.set_xticklabels(corr.columns,rotation=45)
+    sns.set_style({'xtick.bottom': True}, {'ytick.left': True})
+    del corr, mask, heatmap
 
 # -------------- Querying the database file
-
 # set db path
 my_path = 'insurance.db'
 
@@ -168,7 +173,8 @@ combined_df = pd.merge(engage_df, lob_df, on='Customer Identity', how='left')
 original_columns = combined_df.columns
 
 # Show a description of the data frame
-print(combined_df.describe(include='all'))
+orig_desc=combined_df.describe(include='all')
+print(orig_desc)
 
 # Drop 'index_x' and 'index_y' since they are not useful anymore
 combined_df.drop(['index_y', 'index_x'], axis=1, inplace=True)
@@ -212,34 +218,44 @@ combined_df.set_axis(['policy_creation_year',
 print(combined_df.shape)
 
 # Show the type of each column
-combined_df.dtypes
+print(combined_df.dtypes)
+
+#Data Transformation and Missing value analysis
 
 # Since education level is the only column with string values
-# it is convenient to transform it from categorical to numerical.
-# Before doing that, it is possible to split the education columns into two
-# columns, one with numeric part and the other one with the education description
+# It is possible to split the education columns into two columns, one with numeric part and the other one with the education description
 combined_df[['edu_code', 'edu_desc']] = combined_df['education_lvl'].str.split(" - ", expand=True)
 
 # Create a one-hot encoded set of the type values for 'education_lvl'
-edu_values = combined_df.edu_desc.unique()
+# (ended up not using this due to it's increase in dimensionality of our input space)
+#edu_values = combined_df.edu_desc.unique()
 
-# Delete education_lvl columns, since its information is into the two new dummy columns
+# Delete education_lvl and the edu_code columns, since its information is captured in the edu_desc cat column
 combined_df = combined_df.drop(['education_lvl', 'edu_code'], axis=1)
+
+
 
 # Checking for missing data using isnull() function & calculating the % of null values per column
 # Show the distribution of missing data per column
 print('This is the missing data distribution per column (%):\n',
       round((combined_df.isnull().sum() / len(combined_df)) * 100, 2))
 
-# Show the percentage of all rows with missing data, no matter which column
+print('This is the data distribution per column equal to 0(%):\n',
+      round(((combined_df ==0).sum() / len(combined_df)) * 100, 2))
+
+#We decided to fill null values in the premium types columns with 0, as these didn't have any zeros before
+#therefore we interpreted this as meaning that the customer did not have this type of policy
+combined_df[['motor_premiums', 'household_premiums', 'health_premiums', 'life_premiums', 'work_premiums']]=combined_df[['motor_premiums', 'household_premiums', 'health_premiums', 'life_premiums', 'work_premiums']].fillna(0)
+
+# Show the percentage of all rows with missing data
 print('The sum of percentage of missing data for all rows is: ',
       round((combined_df.isnull().sum() / len(combined_df)).sum() * 100, 2), '% \n',
       'which are ', combined_df.isnull().sum().sum(), 'rows of the total ', len(combined_df), 'rows')
 
 # Assuming there are no more than 1 missing value per row,
-# The number of rows with null values is below 3%,
+# The number of rows with null values is below 0.89%,
 # which is a reasonable amount of rows that can be dropped
-# and continue with the 96.6% of the dataframe
+# and continue with the 10204 customers
 # comparing sizes of data frames if we dropped rows with at least one null value
 print("Original data frame length:",
       len(combined_df),
@@ -253,7 +269,6 @@ print("Original data frame length:",
 
 # making new data frame 'null_values' with dropped NA values
 null_df = combined_df[combined_df.isna().any(axis=1)]
-
 # Drop rows with NA values
 df = combined_df.dropna(axis=0, how='any')
 df.isnull().sum()
@@ -273,7 +288,7 @@ type_dict = {
     'work_premiums': float,
     'edu_desc': str
 }
-df.columns
+
 df = df.astype(type_dict)
 df.dtypes
 
@@ -330,11 +345,11 @@ else:
     print('5. Not all values from has_children column are binary values.',
           ' Additional check is necessary.', '\n')
 
-# we decide to map the binary variable to a string variable to treat is as a categorical variable
+# we decide to map the binary variable to a string variable to treatit as a categorical variable
 df['has_children'] = df['has_children'].map({1: 'Yes', 0: 'No'})
 
 # birth_year: should not exist values larger than policy year creation
-print("6. Are there values greater than policy_creation _year on the 'birth_year'?: ",
+print("6. Are there values greater than policy_creation _year on the 'birth_year' + 18 years?: ",
       sum(np.where(df['policy_creation_year'] < (df['birth_year'] + 18), 1, 0)))
 
 # Due to the high levels of inconsistent data in the birth year column we decide to drop this column as the data in it cannot be trusted
@@ -343,30 +358,72 @@ df.drop('birth_year', axis=1, inplace=True)
 # customer_monetary_value (CMV), nothing to verify
 # claims_rate, nothing to verify
 # all premiums, nothing to verify
-#create feature for number of active premiums per customer
-df['number_active_premiums']=df[['motor_premiums', 'household_premiums', 'health_premiums',
-       'life_premiums', 'work_premiums']].gt(0).sum(axis=1)
+# all the other columns, (nothing to verify)
+
+#########################################################
+# --------- Calculating additional variables ------------
+#########################################################
+
+# With the additional information given,
+# it's possible to obtain extra valuable information.
+
+# #create feature for number of active premiums per customer
+df['active_premiums'] = df[['motor_premiums', 'household_premiums', 'health_premiums', 'life_premiums', 'work_premiums']].gt(0).sum(axis=1)
 
 #create feature for number of premiums cancelled this year but were active the previous year per customer
 #a negative number for the premium indicates a reversal i.e. that a policy was active the previous year but canceled this year
-df['number_cancelled_premiums']=df[['motor_premiums', 'household_premiums', 'health_premiums',
-       'life_premiums', 'work_premiums']].lt(0).sum(axis=1)
+#after correlation analysis we decide to make this a pct of total active premiums last year (5)
+df['cancelled_premiums_pct']=df[['motor_premiums', 'household_premiums', 'health_premiums',
+       'life_premiums', 'work_premiums']].lt(0).sum(axis=1)/df[['motor_premiums', 'household_premiums', 'health_premiums',
+       'life_premiums', 'work_premiums']].ne(0).sum(axis=1)
 
-# all the other columns, (nothing to verify)
+# Calculate how old is each customer's first policy
+# and create a new column named 'Cust_pol_age'
+today_year = int(date.today().year)
+df['cust_tenure'] = today_year - df['policy_creation_year']
 
+# we decided to no longer generate customer age after discovering a big chunk of the data is unreliable
 
+# For 'claims_rate' (CR) it's possible to clear the 'Amount paid by the insurance company'
+# claims_rate = (Amount paid by the insurance company)/(Total Premiums)
+# Therefore:(Amount paid by the insurance company) = (claims_rate)*(Total Premiums)
+# where: (Total Premiums) can be calculated prior, as the sum of:
+# 'motor_premiums', 'household_premiums', 'health_premiums',
+# 'life_premiums', 'work_premium
+
+# Calculating and adding 'total_premiums' to the data frame
+df['total_premiums'] = df['motor_premiums'] + \
+                       df['household_premiums'] + \
+                       df['health_premiums'] + \
+                       df['life_premiums'] + \
+                       df['work_premiums']
+
+# # Calculate 'Amount paid by the insurance company' assuming claims_rate is the same as that over the last 2 yrs
+df['amt_paidby_comp'] = df['claims_rate'] * df['total_premiums']
+
+# For 'customer_monetary_value' (CMV), it's possible to clear the given formula:
+# CMV = (Customer annual profit)(number of years as customer) - (acquisition cost)
+# Therefore:
+# (acquisition cost) = (Customer annual profit)(number of years as customer) - CMV
+#     where: (Customer annual profit) and (number of years as customer)
+# can be calculated prior, as a requirement to get (acquisition cost)
+#  we assumed Customer annual profit = total premiums - amt_paidby_comp and number of years as customer was the cust_tenure
+
+# Calculating the acquisition cost assuming claims_rate is the same as that over the last 2 yrs
+df['cust_acq_cost'] = (df['total_premiums']-df['amt_paidby_comp']) * df['cust_tenure'] - df['customer_monetary_value']
+
+# Calculate the premium/wage proportion
+df['premium_wage_ratio'] = df['total_premiums'] / (df['gross_monthly_salary'] * 12)
+
+#we select the categorical columns so we can analyse the numerical values visually more easily
 # Categorical boolean mask
 categorical_feature_mask = df.dtypes == object
 # filter categorical columns using mask and turn it into a list
 categorical_cols = df.columns[categorical_feature_mask].tolist()
-
-df_cat = df.loc[:, categorical_cols]
-
-df.drop(categorical_cols, axis=1, inplace=True)
-
-
-# -------------- Take a look at all variables distribution
-# After logical validation, we check the distribution of each variable by plotting histograms
+df.columns
+# -------------- Detecting outliers
+# After logical validation, we check for outliers using different methods:
+# 1) Histograms
 def hist_df(df_in):
     fig, axes = plt.subplots(len(df_in.columns) // 3, 3, figsize=(20, 48))
 
@@ -377,142 +434,40 @@ def hist_df(df_in):
             i = i + 1
     fig.savefig("outliers_hist.png")
 
-
-# Apply histogram function to the entire data frame
-hist_df(df)
-
-#########################################################
-# --------- Calculating additional variables ------------
-#########################################################
-
-# With the additional information given,
-# it's possible to obtain extra valuable information.
-
-# For 'customer_monetary_value' (CMV), it's possible to clear the given formula:
-# CMV = (Customer annual profit)(number of years as customer) - (acquisition cost)
-# Therefore:
-
-# (acquisition cost) = (Customer annual profit)(number of years as customer) - CMV
-
-#     where: (Customer annual profit) and (number of years as customer)
-# can be calculated prior, as a requirement to get (acquisition cost)
-
-# Calculate how old is each customer's first policy
-# and create a new column named 'Cust_pol_age'
-today_year = int(date.today().year)
-df['cust_pol_age'] = today_year - df['policy_creation_year']
-
-# we decided to no longer generate customer age after discovering a big chunk of the data is unreliable
-
-# dropping the year column as this information has now been captured in the age variable created
-df.drop(['policy_creation_year'], axis=1, inplace=True)
-
-# Calculating and adding 'total_premiums' to the data frame
-df['total_premiums'] = df['motor_premiums'] + \
-                       df['household_premiums'] + \
-                       df['health_premiums'] + \
-                       df['life_premiums'] + \
-                       df['work_premiums']
-
-# Calculating the acquisition cost:
-df['cust_acq_cost'] = df['total_premiums'] * df['cust_pol_age'] - df['customer_monetary_value']
-#
-# For 'claims_rate' (CR) it's possible to clear the 'Amount paid by the insurance company'
-# claims_rate = (Amount paid by the insurance company)/(Total Premiums)
-# Therefore:
-# (Amount paid by the insurance company) = (claims_rate)*(Total Premiums)
-#
-# where: (Total Premiums) can be calculated prior, as the sum of:
-# 'motor_premiums', 'household_premiums', 'health_premiums',
-# 'life_premiums', 'work_premiums'
-
-# Calculate 'Amount paid by the insurance company'
-df['amt_paidby_comp_2yrs'] = df['claims_rate'] * df['total_premiums']
-
-# Calculate the premium/wage proportion
-
-df['premium_wage_ratio'] = df['total_premiums'] / (df['gross_monthly_salary'] * 12)
-len(df)
-
-# We are now going to scale the data to visualize all box-plots in one chart
-# Standardize the data to have a mean of ~0 and a variance of 1
-scaler = StandardScaler()
-X_std = scaler.fit_transform(df)
-X_std_df = pd.DataFrame(X_std, columns=df.columns)
+# # Apply histogram function to the entire data frame
+hist_df(df.drop(categorical_cols, axis=1))
 
 #########################################################
 # ------------------- Excluding outliers ----------------
 #########################################################
 
-# Define the lower and upper quartiles boundaries for plotting the boxplots
-# and for dropping values. Numbers between (0,1) and qtl1 < qtl2
-qtl_1 = 0.05  # lower boundary
-qtl_2 = 0.95  # upper boundary
+# Standardize the numerical variables to plot them all with the same scale
+scaler = StandardScaler()
+X_std = scaler.fit_transform(df.drop(categorical_cols, axis=1))
+X_std_df = pd.DataFrame(X_std, columns=df.drop(categorical_cols, axis=1).columns)
 
-
-def boxplot_all_columns(df_in, qtl_1, qtl_2):
-    """
-    qtl_1 is the lower quantile use to plot the boxplots. Number between (0,1)
-    qtl_2 is the upper quantile use to plot the boxplots. Number between (0,1)
-    """
-    sns.set(style="whitegrid")
-    fig, ax = plt.subplots(figsize=(15, 15))
-    ax = sns.boxplot(data=df_in, orient="h", palette="Set2", whis=[qtl_1, qtl_2])
-    plt.show()
-
-
-# Define quartiles for plotting the boxplots and dropping rows
-def IQR_drop_outliers(df_in, qtl_1, qtl_2):
-    '''
-    qtl_1 is the lower quantile use to drop the rows. Number between (0, 1)
-    qtl_2 is the upper quantile use to drop the rows. Number between (0, 1)
-    '''
-    Q1 = df_in.quantile(0.25)
-    Q3 = df_in.quantile(0.75)
-    # IQR = Q3 - Q1
-    # lower_range = Q1 - (1.5 * IQR)
-    # upper_range = Q3 + (1.5 * IQR)
-
-    # df_out is filtered with values within the quartiles boundaries
-    df_out = df_in[~((df_in < Q1) | (df_in > Q3)).any(axis=1)]
-    df_outliers = df_in[((df_in < Q1) | (df_in > Q3)).any(axis=1)]
-    return df_out, df_outliers
-
-
-# References:
-# https://medium.com/@prashant.nair2050/hands-on-outlier-detection-and-treatment-in-python-using-1-5-iqr-rule-f9ff1961a414
-# https://www.dataquest.io/blog/tutorial-advanced-for-loops-python-pandas/
-# https://wellsr.com/python/python-create-pandas-boxplots-with-dataframes/
-# https://notebooks.ai/rmotr-curriculum/outlier-detection-using-boxplots-a89cd3ee
-# https://seaborn.pydata.org/examples/horizontal_boxplot.html
+qtl_1 = 0.01  # lower boundary
+qtl_2 = 0.99  # upper boundary
 
 # Apply box-plot function to the selected columns
 boxplot_all_columns(X_std_df, qtl_1, qtl_2)
+print(df.shape)
 
 # There are outliers, so let's remove them with the 'IQR_drop_outliers' function
 df, df_outliers = IQR_drop_outliers(df, qtl_1, qtl_2)
+print(df.shape)
 
-# Standardize the data after dropping the outliers
+# Standardize the data after dropping the outliers to plot them with the same scale
 scaler = StandardScaler()
-X_std = scaler.fit_transform(df)
-X_std_df = pd.DataFrame(X_std, columns=df.columns)
+X_std = scaler.fit_transform(df.drop(categorical_cols, axis=1))
+X_std_df = pd.DataFrame(X_std, columns=df.drop(categorical_cols, axis=1).columns)
 
-# Display box-plots again without outliers
-boxplot_all_columns(X_std, qtl_1, qtl_2)
+# Plot without outliers
+boxplot_all_columns(X_std_df, qtl_1, qtl_2)
 
-# For the following plotting part, it's necessary to use both "df_cat" and "df"
-# It's also necessary to have the same customers on both data frames.
-# So let's merge df_cat to df to keeping just the customers from df (without outliers)
-# Redefining df_cat (without outliers):
-df.shape        # 9893 customers
-df_cat.shape    # 9985 customers, 92 customers more on df_cat
-
-# So there were 92 outliers according to IQR(5th, 95th) criteria
-
-df_cat = pd.merge(df['gross_monthly_salary'], df_cat,
-                  left_on='Customer Identity', right_on='Customer Identity', how='left')
-df_cat = df_cat.drop(['gross_monthly_salary'], axis=1)
-df_cat.shape    # 9893 customers, the same as df
+#Allocate the categorical columns to a new Dataframe
+df_cat = df.loc[:, categorical_cols]
+df.drop(categorical_cols, axis=1, inplace=True)
 
 
 #-------- Re-Scale the data before plotting -------------
@@ -630,13 +585,15 @@ plt.show()
 # The other three are homogeneously dense distributed between 0.9 k and 4.5 k (EUR)
 del df_educ, B_df, H_df, D_df, P_df
 
-# ----------- 5. Density curve for policy age:
+# ----------- 5. Histogram for tenure:
 # Check the distribution of this variable individually:
-sns.distplot(df['cust_pol_age'], kde=False)
-plt.title('Policy age', fontsize=18)
-plt.xlabel('Customer policy age (years)', fontsize=16)
+sns.distplot(df['cust_tenure'], kde=False)
+plt.title('Customer tenure', fontsize=18)
+plt.xlabel('Customer tenure (years)', fontsize=16)
 plt.ylabel('Frequency', fontsize=16)
 plt.show()
+
+df['cust_tenure'].describe()
 
 # This Histogram shows the behavior of customer acquisition by
 # the insurance company over time. It explicitly shows a
@@ -677,8 +634,6 @@ plt.xlabel('Claim Rate')
 plt.ylabel('Premiums (EUR)')
 plt.show()
 
-
-# Conclude something
 
 del claim_prem_df, color_palette_list
 
@@ -741,7 +696,7 @@ color_palette_list = ["#4878D0", "#6ACC64", "#D65F5F", "#956CB4", "#D5BB67", "#8
 bar_plot = sns.barplot(x=df_premium.index,
                        y=df_premium.values,
                        color=color_palette_list[2])
-
+len(df)
 # Create labels
 label = [df_premium.iloc[0],
          df_premium.iloc[1],
@@ -777,7 +732,7 @@ reversals_df = pd.DataFrame(list(zip(['Health', 'Household', 'Life', 'Motor', 'W
                                       len(work_reversals_df)])),
                             columns=['Premium', 'Reversals'])
 reversals_df.set_index('Premium', inplace=True)
-reversals_df
+reversals_df.sum()
 
 color_palette_list = ["#4878D0", "#6ACC64", "#D65F5F", "#956CB4", "#D5BB67", "#82C6E2"]
 
@@ -856,12 +811,14 @@ sns.distplot(df['premium_wage_ratio'])
 plt.show
 # Now, let's plot CR vs PWR for each customer to see if there's some trend:
 sns.jointplot(x=df['premium_wage_ratio'],
-              y=df['amt_paidby_comp_2yrs'], data=df,
+              y=df['amt_paidby_comp'], data=df,
               color='green')
 plt.show
 
 # Total amount paid by the insurance companyÑ
-df['amt_paidby_comp_2yrs'].sum()
+df['amt_paidby_comp'].sum()
+
+df['gross_monthly_salary'].describe()
 
 # ------ Count-plot for customers by salary_bin and education level
 # Define a new data frame with only categorical values for this part

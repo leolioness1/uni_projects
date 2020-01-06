@@ -425,7 +425,7 @@ X_std_df = pd.DataFrame(X_std, columns=df.columns, index=df.index)
 X_std_df.columns
 
 #########################################################
-# --------------- Gaussian Mixture Models ---------------
+# --------------- Gaussian Mixture Models --------------s-
 #########################################################
 # 0) This should be standardized df:
 to_GMM = X_std_df

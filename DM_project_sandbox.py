@@ -726,7 +726,7 @@ clust_df.drop('active_premiums',axis=1,inplace=True)
 
 #since claims_rate, customer_monetary_value,amt_paidby_comp and cust_acq_cost are highly correlated with each other
 #mainly because they are mainly linear combinations of each other, we decide to keep customer aquisition cost since it is the most informative for the insurance industry
-clust_df.drop('claims_rate', axis=1, inplace=True)
+# clust_df.drop('claims_rate', axis=1, inplace=True)
 # clust_df.drop('customer_monetary_value',axis=1,inplace=True)
 clust_df.drop('cust_acq_cost',axis=1,inplace=True)
 clust_df.drop('amt_paidby_comp',axis=1,inplace=True)
@@ -761,6 +761,15 @@ scaler = StandardScaler()
 X_std = scaler.fit_transform(clust_df)
 X_std_df = pd.DataFrame(clust_df, columns=clust_df.columns)
 
+# variance zero cols must go
+corr = X_std_df.corr()  # Calculate the correlation of the above variables
+sns.set_style("whitegrid")
+sns.set(font_scale=1.0)
+cmap = sns.diverging_palette(h_neg=210, h_pos=350, s=90, l=30, as_cmap=True)
+# clustermap
+clustermap = sns.clustermap(data=corr, cmap="coolwarm")
+clustermap.savefig('corr_clust_clustermap.png')
+
 # split main clustering Dataframe into products and value dataframes
 
 X_prod_std_df = X_std_df[['motor_premiums_pct', 'household_premiums_pct',
@@ -772,33 +781,33 @@ X_value_std_df = X_std_df[['cancelled_premiums_pct','claims_rate', 'customer_mon
 ########################################################
 # ----------------------K-modes-------------------------
 ########################################################
-# Selecting variables to use in K-modes and make df_Engage
-df_Engage = df_cat.join(df[['gross_monthly_salary', 'cust_tenure']])
-df_Engage.columns
+# Selecting variables to use in K-modes and make Engage_df
+Engage_df = df_cat.join(df[['gross_monthly_salary', 'cust_tenure']])
+Engage_df.columns
 
 # Converting gross_monthly_salary into categorical variable, using bins
-df_Engage['salary_bin'] = pd.cut(df_Engage['gross_monthly_salary'],
+Engage_df['salary_bin'] = pd.cut(Engage_df['gross_monthly_salary'],
                                  [0, 1000, 2000, 3000, 4000, 5000, 6000],
                                  labels=['0-1k', '1k-2k', '2k-3k', '3k-4k', '4k-5k', '5k-6k'])
 # Converting cust_pol_age into categorical variable, using bins
-df_Engage['tenure_bin'] = pd.cut(df_Engage['cust_tenure'],
+Engage_df['tenure_bin'] = pd.cut(Engage_df['cust_tenure'],
                                  [20, 25, 30, 35, 40, 45, 50],
                                  labels=['20-25', '25-30', '30-35', '35-40', '40-45', '45-50'])
 
 # Drop 'gross_monthly_salary' and 'cust_pol_age', since the goal is to perform K-modes
-df_Engage = df_Engage.drop(['gross_monthly_salary', 'cust_tenure'], axis=1)
-# Take a look at the new df_Engage full categorical
-df_Engage.head()
-df_Engage['salary_bin'] = df_Engage['salary_bin'].astype(str)
-df_Engage['tenure_bin'] = df_Engage['tenure_bin'].astype(str)
-df_Engage.dtypes
+Engage_df = Engage_df.drop(['gross_monthly_salary', 'cust_tenure'], axis=1)
+# Take a look at the new Engage_df full categorical
+Engage_df.head()
+Engage_df['salary_bin'] = Engage_df['salary_bin'].astype(str)
+Engage_df['tenure_bin'] = Engage_df['tenure_bin'].astype(str)
+Engage_df.columns
 
 # Choosing K for kmodes by comparing Cost against each K. Copied from:
 # https://www.kaggle.com/ashydv/bank-customer-clustering-k-modes-clustering
 cost = []
 for num_clusters in list(range(1, 10)):
     kmode = KModes(n_clusters=num_clusters, init="Cao", n_init=1, verbose=1)
-    kmode.fit_predict(df_Engage)
+    kmode.fit_predict(Engage_df)
     cost.append(kmode.cost_)
 
 y = np.array([i for i in range(1, 10, 1)])
@@ -809,7 +818,7 @@ plt.show()
 ## ------  K-modes with k of
 k = 2
 kmodes_clustering = KModes(n_clusters=k, init='Cao', n_init=50, verbose=1)
-clusters_cat = kmodes_clustering.fit_predict(df_Engage)
+clusters_cat = kmodes_clustering.fit_predict(Engage_df)
 
 # Turn the dummified df into two columns with PCA
 pca = PCA(2)
@@ -839,11 +848,11 @@ plt.show()
 # Print the cluster centroids
 print("The mode of each variable for each cluster:\n{}".format(kmodes_clustering.cluster_centroids_)) # This gives the mode of each variable for each cluster.
 df_cat_centroids = pd.DataFrame(kmodes_clustering.cluster_centroids_,
-                                   columns=df_Engage.columns)
+                                   columns=Engage_df.columns)
 
 unique, counts = np.unique(kmodes_clustering.labels_, return_counts=True)
 cat_counts = pd.DataFrame(np.asarray((unique, counts)).T, columns=['Label', 'Number'])
-cat_centroids = pd.concat([df_Engage, cat_counts], axis=1)
+cat_centroids = pd.concat([Engage_df, cat_counts], axis=1)
 del cat_counts, k
 
 
@@ -1264,6 +1273,7 @@ print(" Labels: \n {} \n Centroids: \n {}".format(list(labels_dict[best_method])
 #########################################################
 # ---------------- Spectral Clustering ------------------
 #########################################################
+
 from sklearn.cluster import SpectralClustering
 from mpl_toolkits.mplot3d import Axes3D
 # 1) Choosing variables to perform clustering

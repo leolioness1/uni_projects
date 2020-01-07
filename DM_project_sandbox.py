@@ -106,6 +106,7 @@ import logging
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
 from sklearn.model_selection import train_test_split
+from sklearn.cluster import SpectralClustering
 from IPython.display import Image           # Decision Tree Visualization
 from sklearn.externals.six import StringIO  # Decision Tree Visualization
 from sklearn.tree import export_graphviz    # Decision Tree Visualization
@@ -669,6 +670,7 @@ boxplot_all_columns(X_std_df, qtl_1, qtl_2)
 #Allocate the categorical columns to a new Dataframe
 df_cat = df.loc[:, categorical_cols]
 df.drop(categorical_cols, axis=1, inplace=True)
+df_outliers.drop(categorical_cols, axis=1, inplace=True)
 
 #########################################################
 # ------------------- Input Space Reduction -------------
@@ -694,7 +696,7 @@ clustermap.savefig('corr_clustermap.png')
 # This clust_df data frame IS NOT Standardized
 clust_df = df.copy(deep=True)
 
-#As an attempt to reduce the input space we will be dropping some variables from the DataFrame before performing clustering
+# As an attempt to reduce the input space we will be dropping some variables from the DataFrame before performing clustering
 # dropping the year column as this information has now been captured in the age variable created
 clust_df.drop(['policy_creation_year'], axis=1, inplace=True)
 #drop the tenure because it is detected as a redundant attributes removed
@@ -711,7 +713,6 @@ clust_df.drop('active_premiums',axis=1,inplace=True)
 clust_df.drop('cust_acq_cost',axis=1,inplace=True)
 clust_df.drop('amt_paidby_comp',axis=1,inplace=True)
 
-
 #we decide to make the other premium values as a pct of total premiums to capture that information here
 #this was also after correlation analysis and to reduce size of the input space
 clust_df['motor_premiums_pct'] = df['motor_premiums'] / df['total_premiums']
@@ -727,6 +728,14 @@ clust_df.drop(['total_premiums'], axis=1, inplace=True)
 # drop gross_monthly_salary as this information has been captured in total_premiums
 clust_df.drop('gross_monthly_salary', axis=1, inplace=True)
 
+# Apply the same transformations to outliers df:
+df_outliers.drop(['policy_creation_year', 'cust_tenure', 'active_premiums', 'cust_acq_cost', 'amt_paidby_comp'], axis=1, inplace=True)
+df_outliers['motor_premiums_pct'] = df['motor_premiums'] / df['total_premiums']
+df_outliers['household_premiums_pct'] = df['household_premiums'] / df['total_premiums']
+df_outliers['health_premiums_pct'] = df['health_premiums'] / df['total_premiums']
+df_outliers['life_premiums_pct'] = df['life_premiums'] / df['total_premiums']
+df_outliers['work_premiums_pct'] = df['work_premiums'] / df['total_premiums']
+df_outliers.drop(['motor_premiums', 'household_premiums', 'health_premiums', 'life_premiums', 'work_premiums', 'total_premiums', 'gross_monthly_salary'], axis=1, inplace=True)
 
 #########################################################
 # ------ Standardization & sub-setting data frame -------
@@ -760,6 +769,26 @@ X_value_std_df = X_std_df[['cancelled_premiums_pct',
                            'claims_rate',
                            'customer_monetary_value',
                            'premium_wage_ratio']]
+
+# I need to standardize the outliers before predicting their clusters
+# with the classification tree. But I'm receiving an error when
+# I try to standardize. Maybe I cannot use the scaler again :(
+# Standardizing outliers data frame
+scaler_out = StandardScaler()
+X_std_out = scaler_out.fit_transform(df_outliers)
+X_std_out_df = pd.DataFrame(df_outliers, columns=df_outliers.columns)
+
+# Same sub-setting for outliers:
+X_prod_std_out_df = X_std_out_df[['motor_premiums_pct',
+                                  'household_premiums_pct',
+                                  'health_premiums_pct',
+                                  'life_premiums_pct',
+                                  'work_premiums_pct']]
+
+X_value_std_out_df = X_std_out_df[['cancelled_premiums_pct',
+                                   'claims_rate',
+                                   'customer_monetary_value',
+                                   'premium_wage_ratio']]
 
 
 # Define the standardized data frame to work with from now:
@@ -984,8 +1013,8 @@ X = PCA_components.iloc[:, :n_cols].values
 
 pca_km = KMeans(n_clusters,
                     random_state=0,
-                    n_init = 50,
-                    max_iter = 300)
+                    n_init=50,
+                    max_iter=300)
 pca_km.fit(X)
 plt.figure()
 # ax.set_title("Kmean on the main {} PCs".format(n__cols))
@@ -1265,7 +1294,7 @@ for i in range(0, pca_2d.shape[0]):
 
 plt.legend([c1, c2, c3, c4, c5, c6],
            ['Cluster 1', 'Cluster 2', 'Cluster 3', 'Cluster 4', 'Cluster 5', 'Cluster 6', 'Cluster 7'])
-plt.title('%i' % n_clusters_ + ' clusters founded')
+plt.title('%i' % np.unique(df_for_pca) + ' clusters founded')
 plt.show()
 
 ###################################################
@@ -1332,31 +1361,31 @@ silhouette_analysis(Std_clust_df, 2, 8)
 #########################################################
 # Define the data frame with labels column
 DT_df = Std_clust_df
-
+dt_labels = pca_km
 
 # Define the target variable 'y'
-X = DT_df.drop('Labels', axis=1)
-y = DT_df[['Labels']]  # The target is the cluster label
+X = DT_df
+y = dt_labels  # The target is the cluster label
 
 # Split up the data into a training set and a test set
 # 70% training and 30% test
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=1)
 
-# Create Decision Tree classifier object
-clf = DecisionTreeClassifier()
-
-# Define the parameters conditions for the Decision Tree
-# dtree = DecisionTreeClassifier(random_state=0, max_depth=None)
-# dtree = DecisionTreeClassifier(criterion='entropy')
+# Define the parameters for the Decision Tree
+clf = DecisionTreeClassifier(criterion='entropy',
+                             splitter='best',
+                             max_depth=None,
+                             random_state=10,
+                             min_samples_leaf=3)
 
 # Train the model
 clf = clf.fit(X_train, y_train)
 
 # Evaluation of the decision tree results
-predictions = clf.predict(X_test)
+predict_test = clf.predict(X_test)
 
-conf_matrix = confusion_matrix(y_test, predictions)
-accuracy = accuracy_score(y_test, predictions)
+conf_matrix = confusion_matrix(y_test, predict_test)
+accuracy = accuracy_score(y_test, predict_test)
 
 # Show confusion matrix
 conf_matrix
@@ -1364,17 +1393,17 @@ conf_matrix
 # Show accuracy
 accuracy
 
-# Print a classification tree report
-print(classification_report(y_test, predictions))
+# Print a classification tree report for the test
+print(classification_report(y_test, predict_test))
 
-features = list(SC_df.columns[0:3])
+features = list(DT_df.columns)
 features
 
 # Plotting Decision Tree
 # Create DOT data
 dot_data = tree.export_graphviz(clf,
                                 out_file=None,
-                                feature_names=['class_'+ str(x) for x in np.unique(y)],
+                                feature_names=DT_df.columns,
                                 class_names=None,
                                 filled=True,
                                 rounded=True,
@@ -1382,20 +1411,36 @@ dot_data = tree.export_graphviz(clf,
 
 # Draw graph
 graph = pydotplus.graph_from_dot_data(dot_data)
-
 # Show graph
 Image(graph.create_png())
-
-
 # Create PNG
 graph.write_png("clf_tree.png")
 
+# -------- Predicting clusters for outliers df ----------
+# Evaluation of the decision tree results
+predict_test = clf.predict(X_value_std_out_df)
+
+conf_matrix = confusion_matrix(y_test, predict_test)
+accuracy = accuracy_score(y_test, predict_test)
+
+# Show confusion matrix
+conf_matrix
+
+# Show accuracy
+accuracy
+
+
+# References:
+# https://towardsdatascience.com/decision-tree-algorithm-explained-83beb6e78ef4
+# https://www.youtube.com/watch?v=z-AGmGmR6Z8
+# https://www.geeksforgeeks.org/python-decision-tree-regression-using-sklearn/
 ###################################################
-#------- Re-Scaling Spectral clustering ------------
+# ---------- Re-Scaling data frame ----------------
 ###################################################
 
-# Re-scale df
+# Re-scale Std_clust_df
 # X_stdSC_df = X_stdSC_df.drop('Clusters', axis=1)  # It{s not ok
+
 scaler.inverse_transform(X=SC_std_df)
 SC_df = pd.DataFrame(scaler.inverse_transform(X=SC_std_df),
                      columns=SC_std_df.columns, index=SC_std_df.index)

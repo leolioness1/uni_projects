@@ -745,7 +745,7 @@ df_outliers.drop(['motor_premiums', 'household_premiums', 'health_premiums', 'li
 # Standardize the data to have a mean of ~0 and a variance of 1
 scaler = StandardScaler()
 X_std = scaler.fit_transform(clust_df)
-X_std_df = pd.DataFrame(clust_df, columns=clust_df.columns)
+X_std_df = pd.DataFrame(X_std, columns=clust_df.columns)
 
 # plotting correlation plot after droping vars before clustering
 corr = X_std_df.corr()  # Calculate the correlation of the above variables
@@ -776,7 +776,7 @@ X_value_std_df = X_std_df[['cancelled_premiums_pct',
 # Standardizing outliers data frame
 scaler_out = StandardScaler()
 X_std_out = scaler_out.fit_transform(df_outliers)
-X_std_out_df = pd.DataFrame(df_outliers, columns=df_outliers.columns)
+X_std_out_df = pd.DataFrame(X_std_out, columns=df_outliers.columns)
 
 # Same sub-setting for outliers:
 X_prod_std_out_df = X_std_out_df[['motor_premiums_pct',
@@ -1222,7 +1222,7 @@ elbow_plot(Std_clust_df, k_max)
 
 init_methods = ['points', '++']
 number_K = 4
-keys, centroids_list, labels_list = compare_init_methods(Std_clust_df, init_methods,number_K)
+keys, centroids_list, labels_list = compare_init_methods(Std_clust_df.values, init_methods,number_K)
 
 # pick best kmeans iteration and initialisation method from plots above (please change accordingly)
 #best_init = 3

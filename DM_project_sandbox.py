@@ -151,7 +151,7 @@ def silhouette_analysis(df_in, n, m):
 
         # Initialize the clusterer with n_clusters value and a random generator
         # seed of 10 for reproducibility.
-        clusterer = KMeans(n_clusters=n_clusters, random_state=10)
+        clusterer = KMeans(n_clusters=n_clusters, init='k-means++', random_state=0,n_init=30)
         cluster_labels = clusterer.fit_predict(df_in)
 
         # The silhouette_score gives the average value for all the samples.
@@ -236,7 +236,7 @@ def IQR_drop_outliers(df_in, qtl_1, qtl_2):
 
 # run different initialisation methods and optimal k value(elbow)
 
-def elbow_plot(data,max_k):
+def elbow_plot(data,max_k, optimal_k):
     """
     This function returns a plot and prints a dataframe of plot values.
     data: original data DataFrame
@@ -248,11 +248,12 @@ def elbow_plot(data,max_k):
     sse = {}
     for k in cluster_range:
         kmeans = KMeans(n_clusters=k,
-                    random_state=0,
-                    n_init = 50,
-                    max_iter = 300).fit(data)
+                        init='k-means++',
+                        random_state=0,
+                        n_init = 30)
+        kmeans.fit(data)
         #data["Clusters"] = kmeans.labels_
-        sse[k] = kmeans.inertia_
+        sse[k] =kmeans.inertia_
         # Inertia: Sum of distances of samples to their closest cluster center
     plt.figure(figsize=(8,5))
     plt.plot(list(sse.keys()), list(sse.values()),
@@ -264,7 +265,7 @@ def elbow_plot(data,max_k):
     plt.title ("K-Means elbow graph", loc = "left",fontweight = "bold")
     plt.xlabel("Number of cluster")
     plt.ylabel("SSE")
-    plt.axvline(x = 4, alpha = 0.4, color = "salmon", linestyle = "--")
+    plt.axvline(x = optimal_k, alpha = 0.4, color = "salmon", linestyle = "--")
     plt.show()
     kmeans_clusters_df = pd.DataFrame.from_dict(sse,orient='index',columns=['Inertia'])
     print (kmeans_clusters_df)
@@ -286,7 +287,7 @@ def compare_init_methods(data, list_init_methods, K_n):
     #     fig.suptitle('Initialization Method Comparision nr {}'.format(i))
 
     for index, init_method in enumerate(list_init_methods):
-        centroids, labels = kmeans2(data, k=K_n, minit=init_method,iter=50)
+        centroids, labels = kmeans2(data, k=K_n, minit=init_method,iter=100)
         keys.append(init_method)
         centroids_list.append(centroids)
         labels_list.append(labels)
@@ -829,7 +830,7 @@ for col in Engage_df:
 # https://www.kaggle.com/ashydv/bank-customer-clustering-k-modes-clustering
 cost = []
 for num_clusters in list(range(1, 10)):
-    kmode = KModes(n_clusters=num_clusters, init="Cao", n_init=1, verbose=1)
+    kmode = KModes(n_clusters=num_clusters, init="Cao", n_init=30, verbose=1)
     kmode.fit_predict(Engage_df)
     cost.append(kmode.cost_)
 
@@ -849,7 +850,7 @@ plt.show()
 
 ## ------  K-modes with k of 3
 k = 3
-kmodes_clustering = KModes(n_clusters=k, init='Cao', n_init=50, verbose=1)
+kmodes_clustering = KModes(n_clusters=k, init='Cao', n_init=30, verbose=1)
 kmode_labels = kmodes_clustering.fit_predict(Engage_df)
 
 # Turn the dummified df into two columns with PCA
@@ -1008,34 +1009,35 @@ plt.show()
 n_cols = 4
 
 max_k=10
+n_clusters = 4
 #elbow plot
-elbow_plot(PCA_components.iloc[:, :n_cols],max_k)
+elbow_plot(PCA_components.iloc[:, :n_cols],max_k,n_clusters)
 
 # ### we show a steep dropoff of inertia at k=4 so we can take k=4
 # ## Perform cluster analysis on PC combonents
-n_clusters = 4
-
+cluster_names=['Cluster 1', 'Cluster 2', 'Cluster 3','Cluster 4','Cluster 5']
 X = PCA_components.iloc[:, :n_cols].values
 
-pca_km = KMeans(n_clusters,
-                    random_state=0,
-                    n_init=50,
-                    max_iter=300)
+pca_km = KMeans(n_clusters,init='k-means++',random_state=0, n_init=30)
 pca_km.fit(X)
-plt.figure()
+
+fig, ax = plt.subplots()
 # ax.set_title("Kmean on the main {} PCs".format(n__cols))
-plt.scatter(X[:, 0], X[:, 1], c=pca_km.labels_,
+scatter=ax.scatter(X[:, 0], X[:, 1], c=pca_km.labels_,
            s=30, cmap='viridis', marker='.')
+# produce a legend with the unique colors from the scatter
+plt.legend(handles=scatter.legend_elements()[0], labels=list(np.unique(pca_km.labels_)),bbox_to_anchor=(1, 1), loc=2, borderaxespad=0.1)
 plt.scatter(pca_km.cluster_centers_[0][0], pca_km.cluster_centers_[0][1], s=40, c='r', marker='s')
 plt.scatter(pca_km.cluster_centers_[1][0], pca_km.cluster_centers_[1][1], s=40, c='r', marker='s')
 plt.scatter(pca_km.cluster_centers_[2][0], pca_km.cluster_centers_[2][1], s=40, c='r', marker='s')
 plt.scatter(pca_km.cluster_centers_[3][0], pca_km.cluster_centers_[3][1], s=40, c='r', marker='s')
+if n_clusters==5:
+    plt.scatter(pca_km.cluster_centers_[4][0], pca_km.cluster_centers_[4][1], s=40, c='r', marker='s')
 
 plt.xlabel("PC1")
 plt.ylabel("PC2")
 plt.title("KMeans using PCs and {} clusters".format(n_clusters))
 plt.show()
-pca_km.cluster_centers_[0][0]
 # Print the cluster centroids
 print("The centroids of each variable for each cluster:\n{}".format(pca_km.cluster_centers_)) # This gives the centroids for each cluster.
 pca_km_centroids = pd.DataFrame(pca_km.cluster_centers_,
@@ -1045,7 +1047,14 @@ pca_km_unique, pca_km_counts = np.unique(pca_km.labels_, return_counts=True)
 pca_km_counts = pd.DataFrame(np.asarray((pca_km_unique, pca_km_counts)).T, columns=['Label', 'Number'])
 pca_km_centroids_df = pd.concat([pca_km_centroids, pca_km_counts], axis=1)
 print(pca_km_centroids_df)
-del pca_km_counts,n_clusters,pca_km_unique,pca_km_centroids
+del pca_km_unique,pca_km_centroids
+pca_km_labels_df = Std_clust_df.copy(deep=True)
+pca_km_labels_df['pca_km_labels'] = pca_km.labels_
+fig = plt.figure(figsize=(30, 100))
+tidy = pca_km_labels_df.melt(id_vars='pca_km_labels')
+sns.barplot(x='pca_km_labels', y='value', hue='variable', data=tidy)
+plt.legend(bbox_to_anchor=(1, 1), loc=2, borderaxespad=0.1)
+plt.show()
 
 # -----------------------------------------------------
 # 4) Plotting the contribution of each variable to the PCA in order to try and interpret the cluster centroids
@@ -1196,10 +1205,10 @@ plt.show()
 to_GMM = Std_clust_df
 
 # 1) Set the GMM parameters
-gmm = mixture.GaussianMixture(n_components=6,
+gmm = mixture.GaussianMixture(n_components=4,
                               init_params='kmeans', # {‘kmeans’, ‘random’}, defaults to ‘kmeans’.
                               max_iter=1000,
-                              n_init=10,
+                              n_init=30,
                               verbose=1)
 # 2) Fit the model
 gmm.fit(to_GMM)
@@ -1267,42 +1276,12 @@ sns.barplot(x='km_labels', y='value', hue='variable', data=tidy)
 plt.show()
 
 
-#########################################################
-# ---------------- Spectral Clustering ------------------
-#########################################################
-# 1) Choosing a data frame variables to perform clustering
-SC_df = final_clusters.drop('Labels', axis=1)       # Std_clust_df
-
-# 2) Standardize the data frame before performing Clustering
-scaler = StandardScaler()
-SC_std = scaler.fit_transform(SC_df)
-SC_std_df = pd.DataFrame(SC_std, columns=SC_df.columns, index=SC_df.index)
-
-# 3.a) Determine the correct number of clusters using the elbow plot function
-elbow_plot(SC_std_df, 6)   # According to median method of Hierarchical Clustering
-
-# The Spectral Clustering Method can be developed with 2 types of affinity.
-# We will use both types and compare the results to choose the best
-
-# 4.a) Using affinity = ‘rbf’ ( Kernel of the euclidean distanced )
-# Building the clustering model using affinity = ‘rbf’
-spectral_model_rbf = SpectralClustering(n_clusters=3, affinity='rbf')
-
-# Training the model and Storing the predicted cluster labels
-labels_rbf = spectral_model_rbf.fit_predict(SC_std_df)
-
-# 4.b) Using affinity = ‘nearest_neighbors’
-spectral_model_nn = SpectralClustering(n_clusters=3, affinity='nearest_neighbors')
-
-# Training the model and Storing the predicted cluster labels
-labels_nn = spectral_model_nn.fit_predict(SC_std_df)
-
 ###################################################
-# ---------------- PCA analysis ------------------
+# ---------------- Cluster Visualisation ------------------
 ###################################################
 # 0.1) Make sure that the 'labels' values correspond to the
 # clustering method you pretend to plot
-labels_for_pca = ms.labels_
+labels_for_pca = kmeans_labels
 
 # 0.2) Set the data frame to analyse
 # It should be standardized!
@@ -1311,29 +1290,38 @@ df_for_pca = Std_clust_df
 ###################################################
 #------------ Plotting 2D PCA results ------------
 ###################################################
+fig = plt.figure(figsize=(30, 100))
 pca = PCA(n_components=2).fit(df_for_pca)  # fit to 2 principal components
 pca_2d = pca.transform(df_for_pca)
-
+c1,c2,c3,c4,c5,c6,c7=[],[],[],[],[],[],[]
+cluster_names=['Cluster 1', 'Cluster 2', 'Cluster 3', 'Cluster 4','Cluster 5', 'Cluster 6', 'Cluster 7']
 # Set a marker and a color to each label (cluster)
 for i in range(0, pca_2d.shape[0]):
     if labels_for_pca[i] == 0:
         c1 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='r', marker='+')
+        # cluster_list.append(c1)
     elif labels_for_pca[i] == 1:
         c2 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='g', marker='o')
+        # cluster_list.append(c2)
     elif labels_for_pca[i] == 2:
         c3 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='b', marker='*')
+        # cluster_list.append(c3)
     elif labels_for_pca[i] == 3:
         c4 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='y', marker='s')
+        # cluster_list.append(c4)
     elif labels_for_pca[i] == 4:
         c5 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='m', marker='p')
+        # cluster_list.append(c5)
     elif labels_for_pca[i] == 5:
         c6 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='c', marker='H')
+        # cluster_list.append(c6)
     elif labels_for_pca[i] == 6:
         c7 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='k', marker='o')
-
-plt.legend([c1, c2, c3],
-           ['Cluster 1', 'Cluster 2', 'Cluster 3', 'Cluster 4', 'Cluster 5', 'Cluster 6', 'Cluster 7'])
-plt.title('%i' % np.unique(df_for_pca) + ' clusters founded')
+        # cluster_list.append(c7)
+cluster_list=[c1,c2,c3,c4,c5,c6,c7]
+plt.legend(cluster_list[:len(np.unique(labels_for_pca))],
+           cluster_names[:len(np.unique(labels_for_pca))])
+plt.title('%i' % len(np.unique(labels_for_pca)) + ' clusters found')
 plt.show()
 
 ###################################################
@@ -1393,8 +1381,7 @@ del df_for_pca, labels_for_pca
 
 # ------------------------------------------------------
 # Applying Silhouette Analysis function over normalized df
-silhouette_analysis(Std_clust_df, 2, 8)
-
+silhouette_analysis(Std_clust_df, 2, 5)
 ###################################################
 # ---------- Re-Scaling data frame ----------------
 ###################################################
@@ -1415,7 +1402,7 @@ clust_df = pd.DataFrame(scaler.inverse_transform(X=X_std),
 #########################################################
 # Define the data frame with labels column
 DT_df = Std_clust_df
-dt_labels = pca_km.labels_
+dt_labels = kmeans_labels
 
 # Define the target variable 'y'
 X = DT_df
@@ -1472,7 +1459,7 @@ graph.write_png("clf_tree.png")
 
 # -------- Predicting clusters for outliers df ----------
 # Evaluation of the decision tree results
-predict_outliers = clf.predict(clust_df[['cancelled_premiums_pct', 'claims_rate', 'customer_monetary_value', 'premium_wage_ratio']])
+predict_outliers = clf.predict(clust_df)
 
 # References:
 # https://towardsdatascience.com/decision-tree-algorithm-explained-83beb6e78ef4

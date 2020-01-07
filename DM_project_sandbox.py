@@ -770,32 +770,7 @@ X_value_std_df = X_std_df[['cancelled_premiums_pct',
                            'customer_monetary_value',
                            'premium_wage_ratio']]
 
-# I need to standardize the outliers before predicting their clusters
-# with the classification tree. But I'm receiving an error when
-# I try to standardize. Maybe I cannot use the scaler again :(
-# Standardizing outliers data frame
-scaler_out = StandardScaler()
-X_std_out = scaler_out.fit_transform(df_outliers)
-X_std_out_df = pd.DataFrame(df_outliers, columns=df_outliers.columns)
-
-# Same sub-setting for outliers:
-X_prod_std_out_df = X_std_out_df[['motor_premiums_pct',
-                                  'household_premiums_pct',
-                                  'health_premiums_pct',
-                                  'life_premiums_pct',
-                                  'work_premiums_pct']]
-
-X_value_std_out_df = X_std_out_df[['cancelled_premiums_pct',
-                                   'claims_rate',
-                                   'customer_monetary_value',
-                                   'premium_wage_ratio']]
-
-
-# Define the standardized data frame to work with from now:
-# This data frame name is already written on the clustering codes
-# Except for K-modes, which uses categorical variables...
-
-Std_clust_df = X_std_df.copy(deep=True)
+Std_clust_df = X_value_std_df.copy(deep=True)
 
 ########################################################
 # ----------------------K-modes-------------------------
@@ -1122,7 +1097,7 @@ plt.show()
 # Commonly used distance measures are Euclidean distance, Manhattan distance or Mahalanobis distance. Unlike k-means clustering, it is "bottom-up" approach.
 
 #########################################################
-# ---------------------- DBSCAN--------
+# ---------------------- DBSCAN-------------------------
 #########################################################
 
 db = DBSCAN(eps=0.9, min_samples=50).fit(Std_clust_df.values)
@@ -1356,12 +1331,27 @@ del df_for_pca, labels_for_pca
 # Applying Silhouette Analysis function over normalized df
 silhouette_analysis(Std_clust_df, 2, 8)
 
+###################################################
+# ---------- Re-Scaling data frame ----------------
+###################################################
+
+# Re-scale Std_clust_df before applying the Decision Tree prediction
+scaler.inverse_transform(X=X_std)
+clust_df = pd.DataFrame(scaler.inverse_transform(X=X_std),
+                        columns=X_std_df.columns, index=X_std_df.index)
+
+# If needed:
+# Add the clusters labels to clust_df depending on the clustering technique
+# selected_labels = pca_km.labels_
+# clust_df['Labels'] = selected_labels
+# clust_df.head()
+
 #########################################################
 # ------------- Decision Tree Classifier ----------------
 #########################################################
 # Define the data frame with labels column
 DT_df = Std_clust_df
-dt_labels = pca_km
+dt_labels = pca_km.labels_
 
 # Define the target variable 'y'
 X = DT_df
@@ -1372,7 +1362,7 @@ y = dt_labels  # The target is the cluster label
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=1)
 
 # Define the parameters for the Decision Tree
-clf = DecisionTreeClassifier(criterion='entropy',
+clf = DecisionTreeClassifier(criterion='gini',
                              splitter='best',
                              max_depth=None,
                              random_state=10,
@@ -1418,38 +1408,12 @@ graph.write_png("clf_tree.png")
 
 # -------- Predicting clusters for outliers df ----------
 # Evaluation of the decision tree results
-predict_test = clf.predict(X_value_std_out_df)
-
-conf_matrix = confusion_matrix(y_test, predict_test)
-accuracy = accuracy_score(y_test, predict_test)
-
-# Show confusion matrix
-conf_matrix
-
-# Show accuracy
-accuracy
-
+predict_outliers = clf.predict(clust_df[['cancelled_premiums_pct', 'claims_rate', 'customer_monetary_value', 'premium_wage_ratio']])
 
 # References:
 # https://towardsdatascience.com/decision-tree-algorithm-explained-83beb6e78ef4
 # https://www.youtube.com/watch?v=z-AGmGmR6Z8
 # https://www.geeksforgeeks.org/python-decision-tree-regression-using-sklearn/
-###################################################
-# ---------- Re-Scaling data frame ----------------
-###################################################
 
-# Re-scale Std_clust_df
-# X_stdSC_df = X_stdSC_df.drop('Clusters', axis=1)  # It{s not ok
-
-scaler.inverse_transform(X=SC_std_df)
-SC_df = pd.DataFrame(scaler.inverse_transform(X=SC_std_df),
-                     columns=SC_std_df.columns, index=SC_std_df.index)
-# Add the clusters labels to SC_df
-SC_df = pd.DataFrame(pd.concat([SC_df, pd.DataFrame(labels_rbf)], axis=1))
-SC_df.columns = ['CMV', 'Claims Rate', 'PWR', 'Labels']
-SC_df.head()        # I think I'm loosing the Customer Identity code around here
-SC_df.dropna(inplace=True)
-
-del scaler, SC_std_df, SC_std
 
 

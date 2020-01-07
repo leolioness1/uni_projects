@@ -1076,16 +1076,27 @@ for n, method in enumerate(methods):
         Z = linkage(final_clusters.drop('Labels', axis=1).values, method)
         ax = fig.add_subplot(len(methods), 1, n + 1)
         dendrogram(Z, ax=ax, labels=df.index, truncate_mode='level',p=3, color_threshold=0.62 * max(Z[:, 2]))
-        ax.tick_params(axis='x', which='major', labelsize=20)
-        ax.tick_params(axis='y', which='major', labelsize=20)
+        #ax.tick_params(axis='x', which='major', labelsize=20)
+        #ax.tick_params(axis='y', which='major', labelsize=20)
         ax.set_xlabel("Number of points in node (or index of point if no parenthesis).")
         ax.set_title('{} Method Dendrogram'.format(method))
-
+        plt.axis('off')
     except Exception as e:
         print('Error caught:'.format(e))
 
 fig.savefig('all_methods_dendrogram.png'.format(method))
 plt.show()
+# Ward variance minimization algorithm provides the most clear clusters, it is based on the Eucleadian distance
+# perform hierarchical clustering on the output of the SOM # can change linkage distance calculation method e.g centroid
+Z = linkage(final_clusters.drop('Labels', axis=1).values, 'ward')
+method = "ward"
+fig = plt.figure(figsize=(30, 20))
+ax = fig.add_subplot(1, 1, 1)
+dendrogram(Z, ax=ax, labels=df.index, truncate_mode='lastp', color_threshold=0.62 * max(Z[:, 2]))
+ax.tick_params(axis='y', which='major', labelsize=20)
+ax.set_title('{} Method Dendrogram'.format(method))
+fig.savefig('{}_method_dendrogram.png'.format(method))
+
 #https://scikit-learn.org/stable/auto_examples/cluster/plot_agglomerative_clustering.html#sphx-glr-auto-examples-cluster-plot-agglomerative-clustering-py
 fig = plt.figure(figsize=(30, 100))
 k_list=[4,5]
@@ -1142,13 +1153,13 @@ plt.show()
 #------------------- Mean Shift -------------------
 ###################################################
 # 0) This should be standardized df:
-to_MS = Std_clust_df
+to_MS = X_std_df
 
 # 1) Estimate bandwith:
 # The following bandwidth can be automatically estimated using
 my_bandwidth = estimate_bandwidth(to_MS,
-                                  quantile=0.15,    # Quantile of all the distances/ 0.3 is the default
-                                  n_samples=1000)
+                                  quantile=0.11,
+                                  n_samples=5000)    # Quantile of all the distances/ 0.3 is the default
 
 # 2) Create an object for Mean Shift:
 ms = MeanShift(bandwidth=my_bandwidth,
@@ -1161,9 +1172,9 @@ ms_cluster_centers = ms.cluster_centers_
 # Count the number of unique labels (clusters)
 ms_n_clusters_ = len(np.unique(ms.labels_))
 # # 4) Re-scale the cluster_centers
-ms_cluster_centers2=scaler.inverse_transform(X=ms_cluster_centers)
+# ms_cluster_centers2=scaler.inverse_transform(X=ms_cluster_centers)
 # Print the cluster centroids
-print("The centroids of each variable for each cluster:\n{}".format(ms_cluster_centers2)) # This gives the centroids for each cluster.
+print("The centroids of each variable for each cluster:\n{}".format(ms_cluster_centers)) # This gives the centroids for each cluster.
 ms_centroids = pd.DataFrame(ms.cluster_centers_,
                                    columns=to_MS.columns)
 ms_unique, ms_counts = np.unique(ms.labels_, return_counts=True)
@@ -1291,7 +1302,7 @@ labels_nn = spectral_model_nn.fit_predict(SC_std_df)
 ###################################################
 # 0.1) Make sure that the 'labels' values correspond to the
 # clustering method you pretend to plot
-labels_for_pca = labels_rbf
+labels_for_pca = ms.labels_
 
 # 0.2) Set the data frame to analyse
 # It should be standardized!
@@ -1320,7 +1331,7 @@ for i in range(0, pca_2d.shape[0]):
     elif labels_for_pca[i] == 6:
         c7 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='k', marker='o')
 
-plt.legend([c1, c2, c3, c4, c5, c6],
+plt.legend([c1, c2, c3],
            ['Cluster 1', 'Cluster 2', 'Cluster 3', 'Cluster 4', 'Cluster 5', 'Cluster 6', 'Cluster 7'])
 plt.title('%i' % np.unique(df_for_pca) + ' clusters founded')
 plt.show()

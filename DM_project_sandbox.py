@@ -97,6 +97,7 @@ from kmodes.kmodes import KModes
 from sklearn import mixture
 from sklearn.metrics import silhouette_samples
 from sklearn.metrics import silhouette_score
+import sompy
 from sompy.sompy import SOMFactory
 from sompy.visualization.bmuhits import BmuHitsView
 from sompy.visualization.mapview import View2D
@@ -822,6 +823,9 @@ Engage_df['salary_bin'] = Engage_df['salary_bin'].astype(str)
 Engage_df['tenure_bin'] = Engage_df['tenure_bin'].astype(str)
 Engage_df.columns
 
+for col in Engage_df:
+    print(Engage_df[col].unique())
+
 # Choosing K for kmodes by comparing Cost against each K. Copied from:
 # https://www.kaggle.com/ashydv/bank-customer-clustering-k-modes-clustering
 cost = []
@@ -939,10 +943,12 @@ view2D = View2D(20, 20, "", text_size=7)
 view2D.show(sm, col_sz=5, which_dim="all", denormalize=True)
 plt.show()
 
-vhts = BmuHitsView(12, 12, "Hits Map", text_size=7)
+vhts = BmuHitsView(10, 10, "Hits Map", text_size=7)
 vhts.show(sm, anotate=True, onlyzeros=False, labelsize=10, cmap="Blues", logaritmic=False)
 
-#plot_hex_map()
+u = sompy.umatrix.UMatrixView(50, 50, 'umat', show_axis=True, text_size=8, show_text=True)
+u.build_u_matrix(sm, distance=1000, row_normalized=False)
+u.show(sm, distance2=8000, row_normalized=False, show_data=True, contooor=False, blob=False)
 
 # K-Means Clustering
 sm.cluster(4)   # According to median method of Hierarchical Clustering

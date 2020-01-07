@@ -272,7 +272,7 @@ def elbow_plot(data,max_k):
 # finding best initialisation method
 def compare_init_methods(data, list_init_methods, K_n):
     """
-    This function returns a plot comparing the range of initialisation methods cluster plots
+    This function returns a plot comparing the range of initialisation methods cluster plots with 4 runs.
     data: original data DataFrame
     list_init_methods: list of initialisation methods for the Scipy learn kmeans2 method.
     K_n: integer representing the number of clusters i.e. value of k in the kmeans funtion
@@ -285,7 +285,7 @@ def compare_init_methods(data, list_init_methods, K_n):
     #     fig.suptitle('Initialization Method Comparision nr {}'.format(i))
 
     for index, init_method in enumerate(list_init_methods):
-        centroids, labels = kmeans2(data, k=K_n, minit=init_method,iter=300)
+        centroids, labels = kmeans2(data, k=K_n, minit=init_method,iter=50)
         keys.append(init_method)
         centroids_list.append(centroids)
         labels_list.append(labels)
@@ -670,6 +670,7 @@ boxplot_all_columns(X_std_df, qtl_1, qtl_2)
 #Allocate the categorical columns to a new Dataframe
 df_cat = df.loc[:, categorical_cols]
 df.drop(categorical_cols, axis=1, inplace=True)
+df_out_cat = df_outliers.loc[:, categorical_cols]
 df_outliers.drop(categorical_cols, axis=1, inplace=True)
 
 #########################################################
@@ -745,7 +746,7 @@ df_outliers.drop(['motor_premiums', 'household_premiums', 'health_premiums', 'li
 # Standardize the data to have a mean of ~0 and a variance of 1
 scaler = StandardScaler()
 X_std = scaler.fit_transform(clust_df)
-X_std_df = pd.DataFrame(clust_df, columns=clust_df.columns)
+X_std_df = pd.DataFrame(X_std, columns=clust_df.columns)
 
 # plotting correlation plot after droping vars before clustering
 corr = X_std_df.corr()  # Calculate the correlation of the above variables
@@ -776,7 +777,7 @@ X_value_std_df = X_std_df[['cancelled_premiums_pct',
 # Standardizing outliers data frame
 scaler_out = StandardScaler()
 X_std_out = scaler_out.fit_transform(df_outliers)
-X_std_out_df = pd.DataFrame(df_outliers, columns=df_outliers.columns)
+X_std_out_df = pd.DataFrame(X_std_out, columns=df_outliers.columns)
 
 # Same sub-setting for outliers:
 X_prod_std_out_df = X_std_out_df[['motor_premiums_pct',
@@ -882,6 +883,7 @@ kmodes_counts = pd.DataFrame(np.asarray((kmodes_unique, kmodes_counts)).T, colum
 kmodes_centroids_df = pd.concat([kmodes_centroids, kmodes_counts], axis=1)
 print(kmodes_centroids_df)
 del kmodes_counts, k,kmodes_unique,kmodes_centroids
+
 
 #########################################################
 # -------------- Self-Organizing Maps -------------------
@@ -1029,7 +1031,7 @@ plt.xlabel("PC1")
 plt.ylabel("PC2")
 plt.title("KMeans using PCs and {} clusters".format(n_clusters))
 plt.show()
-pca_km.cluster_centers_[0][0]
+
 # Print the cluster centroids
 print("The centroids of each variable for each cluster:\n{}".format(pca_km.cluster_centers_)) # This gives the centroids for each cluster.
 pca_km_centroids = pd.DataFrame(pca_km.cluster_centers_,
@@ -1040,6 +1042,12 @@ pca_km_counts = pd.DataFrame(np.asarray((pca_km_unique, pca_km_counts)).T, colum
 pca_km_centroids_df = pd.concat([pca_km_centroids, pca_km_counts], axis=1)
 print(pca_km_centroids_df)
 del pca_km_counts,n_clusters,pca_km_unique,pca_km_centroids
+pca_km_labels_df = Std_clust_df.copy(deep=True)
+pca_km_labels_df['pca_km_labels'] = pca_km.labels_
+fig = plt.figure(figsize=(30, 100))
+tidy = pca_km_labels_df.melt(id_vars='pca_km_labels')
+sns.barplot(x='pca_km_labels', y='value', hue='variable', data=tidy)
+plt.show()
 
 # -----------------------------------------------------
 # 4) Plotting the contribution of each variable to the PCA in order to try and interpret the cluster centroids
@@ -1080,17 +1088,6 @@ for n, method in enumerate(methods):
 
 fig.savefig('all_methods_dendrogram.png'.format(method))
 plt.show()
-# Ward variance minimization algorithm provides the most clear clusters, it is based on the Eucleadian distance
-# perform hierarchical clustering on the output of the SOM # can change linkage distance calculation method e.g centroid
-Z = linkage(final_clusters.drop('Labels', axis=1).values, 'ward')
-method = "ward"
-fig = plt.figure(figsize=(30, 20))
-ax = fig.add_subplot(1, 1, 1)
-dendrogram(Z, ax=ax, labels=df.index, truncate_mode='lastp', color_threshold=0.62 * max(Z[:, 2]))
-ax.tick_params(axis='y', which='major', labelsize=20)
-ax.set_title('{} Method Dendrogram'.format(method))
-fig.savefig('{}_method_dendrogram.png'.format(method))
-
 #https://scikit-learn.org/stable/auto_examples/cluster/plot_agglomerative_clustering.html#sphx-glr-auto-examples-cluster-plot-agglomerative-clustering-py
 fig = plt.figure(figsize=(30, 100))
 k_list=[4,5]
@@ -1111,6 +1108,17 @@ for index,n_clusters in enumerate(k_list):
         plt.suptitle('Hierarchical clustering comparision', size=17)
 plt.show()
 
+# # Ward variance minimization algorithm provides the most clear clusters, it is based on the Eucleadian distance
+# # perform hierarchical clustering on the output of the SOM # can change linkage distance calculation method e.g centroid
+# Z = linkage(final_clusters.drop('Labels', axis=1).values, 'ward')
+# method = "ward"
+# fig = plt.figure(figsize=(30, 20))
+# ax = fig.add_subplot(1, 1, 1)
+# dendrogram(Z, ax=ax, labels=df.index, truncate_mode='lastp', color_threshold=0.62 * max(Z[:, 2]))
+# ax.tick_params(axis='y', which='major', labelsize=20)
+# ax.set_title('{} Method Dendrogram'.format(method))
+# fig.savefig('{}_method_dendrogram.png'.format(method))
+
 # Try different methods for clustering, check documentation:
 # https://docs.scipy.org/doc/scipy/reference/generated/scipy.cluster.hierarchy.linkage.html?highlight=linkage#scipy.cluster.hierarchy.linkage
 # https://www.analyticsvidhya.com/blog/2019/05/beginners-guide-hierarchical-clustering/
@@ -1122,25 +1130,32 @@ plt.show()
 # Commonly used distance measures are Euclidean distance, Manhattan distance or Mahalanobis distance. Unlike k-means clustering, it is "bottom-up" approach.
 
 #########################################################
-# ---------------------- DBSCAN--------
+# ---------------------- DBSCAN-------------------------
 #########################################################
+#https://towardsdatascience.com/cluster-analysis-create-visualize-and-interpret-customer-segments-474e55d00ebb
 
 db = DBSCAN(eps=0.9, min_samples=50).fit(Std_clust_df.values)
 
-dbs_labels = db.labels_
+dbs_n_clusters_ = len(set(db.labels_)) - (1 if -1 in db.labels_ else 0)
 
-dbs_n_clusters_ = len(set(dbs_labels)) - (1 if -1 in dbs_labels else 0)
-
-dbs_unique_clusters, dbs_count_clusters = np.unique(dbs_labels, return_counts=True)
-
-# -1 is the noise
-print(np.asarray((dbs_unique_clusters, dbs_count_clusters)))
+dbs_unique, dbs_counts = np.unique(db.labels_, return_counts=True)
+dbs_counts = pd.DataFrame(np.asarray((dbs_unique, dbs_counts)).T, columns=['Label', 'Number'])
+dbs_labels_df = Std_clust_df.copy(deep=True)
+dbs_labels_df['dbscan_labels'] = db.labels_
+dbs_centroids_df = (dbs_labels_df.loc[dbs_labels_df.dbscan_labels!=-1, :]
+                    .groupby('dbscan_labels').mean())
+print(dbs_centroids_df)
+del dbs_unique, dbs_counts
+fig = plt.figure(figsize=(30, 100))
+tidy = dbs_labels_df.melt(id_vars='dbscan_labels')
+sns.barplot(x='dbscan_labels', y='value', hue='variable', data=tidy)
+plt.show()
 
 ###################################################
 #------------------- Mean Shift -------------------
 ###################################################
 # 0) This should be standardized df:
-to_MS = final_clusters.drop('Labels', axis=1)
+to_MS = Std_clust_df
 
 # 1) Estimate bandwith:
 # The following bandwidth can be automatically estimated using
@@ -1155,23 +1170,26 @@ ms = MeanShift(bandwidth=my_bandwidth,
 
 # 3) Apply Mean Shift to data frame:
 ms.fit(to_MS)
-
-# 3.1) Get labels
-ms_labels = ms.labels_
-# 3.2) Get clusters centers
 ms_cluster_centers = ms.cluster_centers_
-
-# 3.3) Count the number of unique labels (clusters)
-ms_labels_unique = np.unique(ms_labels)
-ms_n_clusters_ = len(ms_labels_unique)
-
+# Count the number of unique labels (clusters)
+ms_n_clusters_ = len(np.unique(ms.labels_))
 # # 4) Re-scale the cluster_centers
-scaler.inverse_transform(X=ms_cluster_centers)
-
-# 5) Count what?
-ms_unique, ms_counts = np.unique(ms_labels, return_counts=True)
-
-print(np.asarray((ms_unique, ms_counts)).T)
+ms_cluster_centers2=scaler.inverse_transform(X=ms_cluster_centers)
+# Print the cluster centroids
+print("The centroids of each variable for each cluster:\n{}".format(ms_cluster_centers2)) # This gives the centroids for each cluster.
+ms_centroids = pd.DataFrame(ms.cluster_centers_,
+                                   columns=to_MS.columns)
+ms_unique, ms_counts = np.unique(ms.labels_, return_counts=True)
+ms_counts = pd.DataFrame(np.asarray((ms_unique,ms_counts)).T, columns=['Label', 'Number'])
+ms_centroids_df = pd.concat([ms_centroids, ms_counts], axis=1)
+print(ms_centroids_df)
+del ms_unique, ms_counts,ms_centroids
+ms_labels_df = Std_clust_df.copy(deep=True)
+ms_labels_df['ms_labels'] = ms.labels_
+fig = plt.figure(figsize=(30, 100))
+tidy = ms_labels_df.melt(id_vars='ms_labels')
+sns.barplot(x='ms_labels', y='value', hue='variable', data=tidy)
+plt.show()
 
 #########################################################
 # --------------- Gaussian Mixture Models ---------------
@@ -1196,14 +1214,21 @@ EM_score_samp = gmm.score_samples(to_GMM)
 # 3.2) Prediction probability
 EM_pred_prob = gmm.predict_proba(to_GMM)
 
-# 3.3) Count the number of unique labels (clusters)
-gmm_labels_unique = np.unique(gmm_labels)
-gmm_n_clusters_ = len(gmm_labels_unique)
+gmm_n_clusters_ = len(np.unique(gmm_labels))
 
 # 5) Count what?
 gmm_unique, gmm_counts = np.unique(gmm_labels, return_counts=True)
-
-print(np.asarray((gmm_unique, gmm_counts)).T)
+gmm_counts = pd.DataFrame(np.asarray((gmm_unique, gmm_counts )).T, columns=['Label', 'Number'])
+gmm_labels_df = Std_clust_df.copy(deep=True)
+gmm_labels_df['gmm_labels'] = gmm_labels
+gmm_centroids_df = (gmm_labels_df.loc[gmm_labels_df.gmm_labels!=-1, :]
+                    .groupby('gmm_labels').mean())
+print(gmm_centroids_df)
+del gmm_unique, gmm_counts
+fig = plt.figure(figsize=(30, 100))
+tidy = gmm_labels_df.melt(id_vars='gmm_labels')
+sns.barplot(x='gmm_labels', y='value', hue='variable', data=tidy)
+plt.show()
 
 
 ########################################################
@@ -1216,7 +1241,7 @@ elbow_plot(Std_clust_df, k_max)
 
 init_methods = ['points', '++']
 number_K = 4
-keys, centroids_list, labels_list = compare_init_methods(Std_clust_df, init_methods,number_K)
+keys, centroids_list, labels_list = compare_init_methods(Std_clust_df.values, init_methods,number_K)
 
 # pick best kmeans iteration and initialisation method from plots above (please change accordingly)
 #best_init = 3
@@ -1224,8 +1249,24 @@ best_method = "points"
 
 centroids_dict = dict(zip(keys, centroids_list))
 labels_dict = dict(zip(keys, labels_list))
-print(" Labels: \n {} \n Centroids: \n {}".format(list(labels_dict[best_method]),
-                                                  scaler.inverse_transform(X=centroids_dict[best_method])))
+kmeans_labels =list(labels_dict[best_method])
+kmeans_centroids =scaler.inverse_transform(X=centroids_dict[best_method])
+print(" Labels: \n {} \n Centroids: \n {}".format(kmeans_labels,
+                                                  kmeans_centroids))
+
+km_centroids = pd.DataFrame(kmeans_centroids,
+                                   columns=Std_clust_df.columns)
+
+km_unique, km_counts = np.unique(kmeans_labels, return_counts=True)
+km_counts = pd.DataFrame(np.asarray((km_unique, km_counts)).T, columns=['Label', 'Number'])
+km_centroids_df = pd.concat([km_centroids, km_counts], axis=1)
+print(km_centroids_df)
+km_labels_df = Std_clust_df.copy(deep=True)
+km_labels_df['km_labels'] = kmeans_labels
+fig = plt.figure(figsize=(30, 100))
+tidy = km_labels_df.melt(id_vars='km_labels')
+sns.barplot(x='km_labels', y='value', hue='variable', data=tidy)
+plt.show()
 
 
 #########################################################

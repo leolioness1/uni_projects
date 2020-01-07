@@ -272,7 +272,7 @@ def elbow_plot(data,max_k):
 # finding best initialisation method
 def compare_init_methods(data, list_init_methods, K_n):
     """
-    This function returns a plot comparing the range of initialisation methods cluster plots with 4 runs.
+    This function returns a plot comparing the range of initialisation methods cluster plots
     data: original data DataFrame
     list_init_methods: list of initialisation methods for the Scipy learn kmeans2 method.
     K_n: integer representing the number of clusters i.e. value of k in the kmeans funtion
@@ -670,7 +670,6 @@ boxplot_all_columns(X_std_df, qtl_1, qtl_2)
 #Allocate the categorical columns to a new Dataframe
 df_cat = df.loc[:, categorical_cols]
 df.drop(categorical_cols, axis=1, inplace=True)
-df_out_cat = df_outliers.loc[:, categorical_cols]
 df_outliers.drop(categorical_cols, axis=1, inplace=True)
 
 #########################################################
@@ -746,7 +745,7 @@ df_outliers.drop(['motor_premiums', 'household_premiums', 'health_premiums', 'li
 # Standardize the data to have a mean of ~0 and a variance of 1
 scaler = StandardScaler()
 X_std = scaler.fit_transform(clust_df)
-X_std_df = pd.DataFrame(X_std, columns=clust_df.columns)
+X_std_df = pd.DataFrame(clust_df, columns=clust_df.columns)
 
 # plotting correlation plot after droping vars before clustering
 corr = X_std_df.corr()  # Calculate the correlation of the above variables
@@ -777,7 +776,7 @@ X_value_std_df = X_std_df[['cancelled_premiums_pct',
 # Standardizing outliers data frame
 scaler_out = StandardScaler()
 X_std_out = scaler_out.fit_transform(df_outliers)
-X_std_out_df = pd.DataFrame(X_std_out, columns=df_outliers.columns)
+X_std_out_df = pd.DataFrame(df_outliers, columns=df_outliers.columns)
 
 # Same sub-setting for outliers:
 X_prod_std_out_df = X_std_out_df[['motor_premiums_pct',
@@ -883,7 +882,6 @@ kmodes_counts = pd.DataFrame(np.asarray((kmodes_unique, kmodes_counts)).T, colum
 kmodes_centroids_df = pd.concat([kmodes_centroids, kmodes_counts], axis=1)
 print(kmodes_centroids_df)
 del kmodes_counts, k,kmodes_unique,kmodes_centroids
-
 
 #########################################################
 # -------------- Self-Organizing Maps -------------------
@@ -1031,7 +1029,7 @@ plt.xlabel("PC1")
 plt.ylabel("PC2")
 plt.title("KMeans using PCs and {} clusters".format(n_clusters))
 plt.show()
-
+pca_km.cluster_centers_[0][0]
 # Print the cluster centroids
 print("The centroids of each variable for each cluster:\n{}".format(pca_km.cluster_centers_)) # This gives the centroids for each cluster.
 pca_km_centroids = pd.DataFrame(pca_km.cluster_centers_,
@@ -1042,12 +1040,6 @@ pca_km_counts = pd.DataFrame(np.asarray((pca_km_unique, pca_km_counts)).T, colum
 pca_km_centroids_df = pd.concat([pca_km_centroids, pca_km_counts], axis=1)
 print(pca_km_centroids_df)
 del pca_km_counts,n_clusters,pca_km_unique,pca_km_centroids
-pca_km_labels_df = Std_clust_df.copy(deep=True)
-pca_km_labels_df['pca_km_labels'] = pca_km.labels_
-fig = plt.figure(figsize=(30, 100))
-tidy = pca_km_labels_df.melt(id_vars='pca_km_labels')
-sns.barplot(x='pca_km_labels', y='value', hue='variable', data=tidy)
-plt.show()
 
 # -----------------------------------------------------
 # 4) Plotting the contribution of each variable to the PCA in order to try and interpret the cluster centroids
@@ -1107,17 +1099,6 @@ for index,n_clusters in enumerate(k_list):
         plt.axis('off')
         plt.suptitle('Hierarchical clustering comparision', size=17)
 plt.show()
-
-# # Ward variance minimization algorithm provides the most clear clusters, it is based on the Eucleadian distance
-# # perform hierarchical clustering on the output of the SOM # can change linkage distance calculation method e.g centroid
-# Z = linkage(final_clusters.drop('Labels', axis=1).values, 'ward')
-# method = "ward"
-# fig = plt.figure(figsize=(30, 20))
-# ax = fig.add_subplot(1, 1, 1)
-# dendrogram(Z, ax=ax, labels=df.index, truncate_mode='lastp', color_threshold=0.62 * max(Z[:, 2]))
-# ax.tick_params(axis='y', which='major', labelsize=20)
-# ax.set_title('{} Method Dendrogram'.format(method))
-# fig.savefig('{}_method_dendrogram.png'.format(method))
 
 # Try different methods for clustering, check documentation:
 # https://docs.scipy.org/doc/scipy/reference/generated/scipy.cluster.hierarchy.linkage.html?highlight=linkage#scipy.cluster.hierarchy.linkage
@@ -1241,7 +1222,7 @@ elbow_plot(Std_clust_df, k_max)
 
 init_methods = ['points', '++']
 number_K = 4
-keys, centroids_list, labels_list = compare_init_methods(Std_clust_df.values, init_methods,number_K)
+keys, centroids_list, labels_list = compare_init_methods(Std_clust_df, init_methods,number_K)
 
 # pick best kmeans iteration and initialisation method from plots above (please change accordingly)
 #best_init = 3
@@ -1397,12 +1378,27 @@ del df_for_pca, labels_for_pca
 # Applying Silhouette Analysis function over normalized df
 silhouette_analysis(Std_clust_df, 2, 8)
 
+###################################################
+# ---------- Re-Scaling data frame ----------------
+###################################################
+
+# Re-scale Std_clust_df before applying the Decision Tree prediction
+scaler.inverse_transform(X=X_std)
+clust_df = pd.DataFrame(scaler.inverse_transform(X=X_std),
+                        columns=X_std_df.columns, index=X_std_df.index)
+
+# If needed:
+# Add the clusters labels to clust_df depending on the clustering technique
+# selected_labels = pca_km.labels_
+# clust_df['Labels'] = selected_labels
+# clust_df.head()
+
 #########################################################
 # ------------- Decision Tree Classifier ----------------
 #########################################################
 # Define the data frame with labels column
 DT_df = Std_clust_df
-dt_labels = pca_km
+dt_labels = pca_km.labels_
 
 # Define the target variable 'y'
 X = DT_df
@@ -1413,7 +1409,7 @@ y = dt_labels  # The target is the cluster label
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=1)
 
 # Define the parameters for the Decision Tree
-clf = DecisionTreeClassifier(criterion='entropy',
+clf = DecisionTreeClassifier(criterion='gini',
                              splitter='best',
                              max_depth=None,
                              random_state=10,
@@ -1459,38 +1455,12 @@ graph.write_png("clf_tree.png")
 
 # -------- Predicting clusters for outliers df ----------
 # Evaluation of the decision tree results
-predict_test = clf.predict(X_value_std_out_df)
-
-conf_matrix = confusion_matrix(y_test, predict_test)
-accuracy = accuracy_score(y_test, predict_test)
-
-# Show confusion matrix
-conf_matrix
-
-# Show accuracy
-accuracy
-
+predict_outliers = clf.predict(clust_df[['cancelled_premiums_pct', 'claims_rate', 'customer_monetary_value', 'premium_wage_ratio']])
 
 # References:
 # https://towardsdatascience.com/decision-tree-algorithm-explained-83beb6e78ef4
 # https://www.youtube.com/watch?v=z-AGmGmR6Z8
 # https://www.geeksforgeeks.org/python-decision-tree-regression-using-sklearn/
-###################################################
-# ---------- Re-Scaling data frame ----------------
-###################################################
 
-# Re-scale Std_clust_df
-# X_stdSC_df = X_stdSC_df.drop('Clusters', axis=1)  # It{s not ok
-
-scaler.inverse_transform(X=SC_std_df)
-SC_df = pd.DataFrame(scaler.inverse_transform(X=SC_std_df),
-                     columns=SC_std_df.columns, index=SC_std_df.index)
-# Add the clusters labels to SC_df
-SC_df = pd.DataFrame(pd.concat([SC_df, pd.DataFrame(labels_rbf)], axis=1))
-SC_df.columns = ['CMV', 'Claims Rate', 'PWR', 'Labels']
-SC_df.head()        # I think I'm loosing the Customer Identity code around here
-SC_df.dropna(inplace=True)
-
-del scaler, SC_std_df, SC_std
 
 

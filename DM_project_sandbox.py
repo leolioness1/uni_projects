@@ -904,11 +904,11 @@ plt.show()
 #########################################################
 # -------------- Self-Organizing Maps -------------------
 #########################################################
-sm = SOMFactory().build(data=Std_clust_df.values,
+sm = SOMFactory().build(data=X_std_df.values,
                mapsize=(20, 20),
                normalization='var',
                initialization='random',     #'random', 'pca'
-               component_names=Std_clust_df.columns,
+               component_names=X_std_df.columns,
                lattice='hexa',              #'rect','hexa'
                training='batch')            #'seq','batch'
 
@@ -945,12 +945,10 @@ sm.train(n_job=4,
         :param name: name used to identify the som
         :param training: Training mode (seq, batch)
 """
-final_clusters = pd.DataFrame(sm._data, columns=Std_clust_df.columns)
+final_clusters = pd.DataFrame(sm._data, columns=X_std_df.columns)
 som_labels = pd.DataFrame(sm._bmu[0])
 final_clusters = pd.concat([final_clusters, som_labels], axis=1)
-
 final_clusters.rename(columns={0 : 'Labels'}, inplace=True)
-
 view2D = View2D(20, 20, "", text_size=7)
 view2D.show(sm, col_sz=5, which_dim="all", denormalize=True)
 plt.show()
@@ -966,6 +964,10 @@ u.show(sm, distance2=8000, row_normalized=False, show_data=True, contooor=False,
 sm.cluster(5)   # According to median method of Hierarchical Clustering
 hits = HitMapView(10, 10, "Clustering", text_size=7)
 a = hits.show(sm, labelsize=12)
+
+#As these labels get assigned to the BMUs and not each data sample the same analyse is not performed
+som_kmeans_label=sm.cluster(5)
+
 
 ########################################################
 # ----------------------K-means-------------------------
@@ -989,7 +991,7 @@ kmeans_labels =list(labels_dict[best_method])
 kmeans_centroids = scaler.inverse_transform(X=centroids_dict[best_method])
 print(" Labels: \n {} \n Centroids: \n {}".format(kmeans_labels,kmeans_centroids ))
 # Print results
-print('kmeans_{}: {}'.format(number_K,silhouette_score(Std_clust_df, pca_km.labels_,metric='euclidean')))
+print('kmeans_{}: {}'.format(number_K,silhouette_score(Std_clust_df, kmeans_labels,metric='euclidean')))
 km_centroids = pd.DataFrame(kmeans_centroids, columns=Std_clust_df.columns)
 km_unique, km_counts = np.unique(kmeans_labels, return_counts=True)
 km_counts = pd.DataFrame(np.asarray((km_unique, km_counts)).T, columns=['Label', 'Number'])
@@ -1089,6 +1091,118 @@ kmodes_unique, kmodes_counts = np.unique(kmodes_clustering.labels_, return_count
 kmodes_counts = pd.DataFrame(np.asarray((kmodes_unique, kmodes_counts)).T, columns=['Label', 'Number'])
 kmodes_centroids_df = pd.concat([kmodes_centroids, kmodes_counts], axis=1)
 print(kmodes_centroids_df)
+#########################################################
+# --------------- Gaussian Mixture Models ---------------
+#########################################################
+# 0) This should be standardized df:
+to_GMM = Std_clust_df
+
+# 1) Set the GMM parameters
+gmm = mixture.GaussianMixture(n_components=5,
+                              init_params='kmeans', # {‘kmeans’, ‘random’}, defaults to ‘kmeans’.
+                              max_iter=1000,
+                              n_init=30,
+                              verbose=1)
+# 2) Fit the model
+gmm.fit(to_GMM)
+
+# 3) Get labels from clusters
+gmm_labels = gmm.predict(to_GMM)
+
+# 3.1) Scores
+EM_score_samp = gmm.score_samples(to_GMM)
+# 3.2) Prediction probability
+EM_pred_prob = gmm.predict_proba(to_GMM)
+
+gmm_n_clusters_ = len(np.unique(gmm_labels))
+
+# 5) Count what?
+gmm_unique, gmm_counts = np.unique(gmm_labels, return_counts=True)
+gmm_counts = pd.DataFrame(np.asarray((gmm_unique, gmm_counts )).T, columns=['Label', 'Number'])
+gmm_labels_df = Std_clust_df.copy(deep=True)
+gmm_labels_df['gmm_labels'] = gmm_labels
+gmm_centroids = gmm_labels_df.groupby('gmm_labels').mean()
+gmm_centroids = scaler.inverse_transform(X=gmm_centroids)
+gmm_centroids = pd.DataFrame(gmm_centroids, columns=Std_clust_df.columns)
+gmm_centroids_df = pd.concat([gmm_centroids, gmm_counts], axis=1)
+print(" Labels: \n {} \n Centroids: \n {}".format(gmm_labels,gmm_centroids ))
+# Print results
+print('Gaussian-Mixture: {}'.format(number_K,silhouette_score(Std_clust_df,gmm_labels,metric='euclidean')))
+print(gmm_centroids_df)
+gmm_centroids_df.to_csv("gaussian_centroids.csv")
+fig = plt.figure(figsize=(30, 100))
+tidy = gmm_labels_df.melt(id_vars='gmm_labels')
+sns.barplot(x='gmm_labels', y='value', hue='variable', data=tidy)
+plt.show()
+
+
+#########################################################
+# ---------------------- DBSCAN-------------------------
+#########################################################
+#https://towardsdatascience.com/cluster-analysis-create-visualize-and-interpret-customer-segments-474e55d00ebb
+
+#db = DBSCAN(eps=0.7, min_samples=10).fit(Std_clust_df.values) #params for value_df
+db = DBSCAN(eps=0.9, min_samples=50).fit(Std_clust_df.values)
+
+dbs_n_clusters_ = len(set(db.labels_)) - (1 if -1 in db.labels_ else 0)
+
+dbs_unique, dbs_counts = np.unique(db.labels_, return_counts=True)
+dbs_counts = pd.DataFrame(np.asarray((dbs_unique, dbs_counts)).T, columns=['Label', 'Number'])
+dbs_labels_df = Std_clust_df.copy(deep=True)
+dbs_labels_df['dbscan_labels'] = db.labels_
+dbs_centroids = (dbs_labels_df.loc[dbs_labels_df.dbscan_labels!=-1, :].groupby('dbscan_labels').mean())
+dbs_centroids = scaler.inverse_transform(X=dbs_centroids)
+dbs_centroids = pd.DataFrame(dbs_centroids, columns=Std_clust_df.columns)
+print(" Labels: \n {} \n Centroids: \n {}".format(db.labels_,dbs_centroids ))
+# Print results
+print('DBSCAN: {}'.format(number_K,silhouette_score(Std_clust_df,db.labels_,metric='euclidean')))
+dbs_centroids_df = pd.concat([dbs_centroids, dbs_counts.loc[dbs_counts.Label!=-1, :].reset_index()], axis=1)
+print(dbs_centroids_df)
+dbs_centroids_df.to_csv("dbs_centroids.csv")
+fig = plt.figure(figsize=(30, 100))
+tidy = dbs_labels_df.melt(id_vars='dbscan_labels')
+sns.barplot(x='dbscan_labels', y='value', hue='variable', data=tidy)
+plt.show()
+
+###################################################
+#------------------- Mean Shift -------------------
+###################################################
+# 0) This should be standardized df:
+to_MS = Std_clust_df
+# 1) Estimate bandwith:
+# The following bandwidth can be automatically estimated using
+my_bandwidth = estimate_bandwidth(to_MS,
+                                  quantile=0.1,    # Quantile of all the distances/ 0.3 is the default
+                                  n_samples=3000)
+
+# 2) Create an object for Mean Shift:
+ms = MeanShift(bandwidth=my_bandwidth,
+               # bandwidth=0.15,
+               bin_seeding=True)
+
+# 3) Apply Mean Shift to data frame:
+ms.fit(to_MS)
+ms_cluster_centers = ms.cluster_centers_
+# Count the number of unique labels (clusters)
+ms_n_clusters_ = len(np.unique(ms.labels_))
+# # 4) Re-scale the cluster_centers
+ms_cluster_centers2=scaler.inverse_transform(X=ms_cluster_centers)
+# Print the cluster centroids
+print(" Labels: \n {} \n Centroids: \n {}".format(ms.labels_,ms_cluster_centers2 ))
+print('Mean-Shift: {}'.format(number_K,silhouette_score(Std_clust_df,ms.labels_,metric='euclidean')))
+ms_centroids = pd.DataFrame(ms_cluster_centers2,columns=to_MS.columns)
+ms_unique, ms_counts = np.unique(ms.labels_, return_counts=True)
+ms_counts = pd.DataFrame(np.asarray((ms_unique,ms_counts)).T, columns=['Label', 'Number'])
+ms_centroids_df = pd.concat([ms_centroids, ms_counts], axis=1)
+print(ms_centroids_df)
+ms_centroids_df.to_csv("meanshift_centroids.csv")
+ms_labels_df = Std_clust_df.copy(deep=True)
+ms_labels_df['ms_labels'] = ms.labels_
+fig = plt.figure(figsize=(30, 100))
+tidy = ms_labels_df.melt(id_vars='ms_labels')
+sns.barplot(x='ms_labels', y='value', hue='variable', data=tidy)
+plt.show()
+
 
 #########################################################
 # ---------------- Hierarchical clustering--------------
@@ -1097,9 +1211,9 @@ print(kmodes_centroids_df)
 methods = ['ward', 'complete', 'average', 'weighted', 'centroid', 'median']  #single (removed as not good)
 fig = plt.figure(figsize=(30, 100))
 for n, method in enumerate(methods):
-    #can try with diff data combinations: final_clusters.drop('Labels', axis=1).values , X_std_df , X_prod_std_df, X_value_std_df
+    #can try with diff data combinations: final_clusters.drop('Labels', axis=1).values , X_std_df , X_prod_df, X_value_df
     try:
-        Z = linkage(final_clusters.drop('Labels', axis=1).values, method)
+        Z = linkage(Std_clust_df, method)
         ax = fig.add_subplot(len(methods), 1, n + 1)
         dendrogram(Z, ax=ax, labels=df.index, truncate_mode='level',p=3, color_threshold=0.62 * max(Z[:, 2]))
         #ax.tick_params(axis='x', which='major', labelsize=20)
@@ -1170,125 +1284,17 @@ plt.show()
 # The points are clustered in such a way that the distance between points within a cluster is minimum and distance between the cluster is maximum.
 # Commonly used distance measures are Euclidean distance, Manhattan distance or Mahalanobis distance. Unlike k-means clustering, it is "bottom-up" approach.
 
-#########################################################
-# ---------------------- DBSCAN-------------------------
-#########################################################
-#https://towardsdatascience.com/cluster-analysis-create-visualize-and-interpret-customer-segments-474e55d00ebb
-
-db = DBSCAN(eps=0.9, min_samples=50).fit(Std_clust_df.values)
-
-dbs_n_clusters_ = len(set(db.labels_)) - (1 if -1 in db.labels_ else 0)
-
-dbs_unique, dbs_counts = np.unique(db.labels_, return_counts=True)
-dbs_counts = pd.DataFrame(np.asarray((dbs_unique, dbs_counts)).T, columns=['Label', 'Number'])
-dbs_labels_df = Std_clust_df.copy(deep=True)
-dbs_labels_df['dbscan_labels'] = db.labels_
-dbs_centroids = (dbs_labels_df.loc[dbs_labels_df.dbscan_labels!=-1, :].groupby('dbscan_labels').mean())
-dbs_centroids = scaler.inverse_transform(X=dbs_centroids)
-dbs_centroids = pd.DataFrame(dbs_centroids, columns=Std_clust_df.columns)
-print(" Labels: \n {} \n Centroids: \n {}".format(db.labels_,dbs_centroids ))
-# Print results
-print('DBSCAN: {}'.format(number_K,silhouette_score(Std_clust_df,db.labels_,metric='euclidean')))
-dbs_centroids_df = pd.concat([dbs_centroids, dbs_counts.loc[dbs_counts.Label!=-1, :].reset_index()], axis=1)
-print(dbs_centroids_df)
-dbs_centroids_df.to_csv("dbs_centroids.csv")
-fig = plt.figure(figsize=(30, 100))
-tidy = dbs_labels_df.melt(id_vars='dbscan_labels')
-sns.barplot(x='dbscan_labels', y='value', hue='variable', data=tidy)
-plt.show()
-
-###################################################
-#------------------- Mean Shift -------------------
-###################################################
-# 0) This should be standardized df:
-to_MS = final_clusters.drop('Labels', axis=1)
-# 1) Estimate bandwith:
-# The following bandwidth can be automatically estimated using
-my_bandwidth = estimate_bandwidth(to_MS,
-                                  quantile=0.1,    # Quantile of all the distances/ 0.3 is the default
-                                  n_samples=5000)
-
-# 2) Create an object for Mean Shift:
-ms = MeanShift(bandwidth=my_bandwidth,
-               # bandwidth=0.15,
-               bin_seeding=True)
-
-# 3) Apply Mean Shift to data frame:
-ms.fit(to_MS)
-ms_cluster_centers = ms.cluster_centers_
-# Count the number of unique labels (clusters)
-ms_n_clusters_ = len(np.unique(ms.labels_))
-# # 4) Re-scale the cluster_centers
-ms_cluster_centers2=scaler.inverse_transform(X=ms_cluster_centers)
-# Print the cluster centroids
-print(" Labels: \n {} \n Centroids: \n {}".format(ms.labels_,ms_cluster_centers2 ))
-print('Mean-Shift: {}'.format(number_K,silhouette_score(Std_clust_df,ms.labels_,metric='euclidean')))
-ms_centroids = pd.DataFrame(ms_cluster_centers2,columns=to_MS.columns)
-ms_unique, ms_counts = np.unique(ms.labels_, return_counts=True)
-ms_counts = pd.DataFrame(np.asarray((ms_unique,ms_counts)).T, columns=['Label', 'Number'])
-ms_centroids_df = pd.concat([ms_centroids, ms_counts], axis=1)
-print(ms_centroids_df)
-ms_centroids_df.to_csv("meanshift_centroids.csv")
-ms_labels_df = Std_clust_df.copy(deep=True)
-ms_labels_df['ms_labels'] = ms.labels_
-fig = plt.figure(figsize=(30, 100))
-tidy = ms_labels_df.melt(id_vars='ms_labels')
-sns.barplot(x='ms_labels', y='value', hue='variable', data=tidy)
-plt.show()
-
-#########################################################
-# --------------- Gaussian Mixture Models ---------------
-#########################################################
-# 0) This should be standardized df:
-to_GMM = Std_clust_df
-
-# 1) Set the GMM parameters
-gmm = mixture.GaussianMixture(n_components=5,
-                              init_params='kmeans', # {‘kmeans’, ‘random’}, defaults to ‘kmeans’.
-                              max_iter=1000,
-                              n_init=30,
-                              verbose=1)
-# 2) Fit the model
-gmm.fit(to_GMM)
-
-# 3) Get labels from clusters
-gmm_labels = gmm.predict(to_GMM)
-
-# 3.1) Scores
-EM_score_samp = gmm.score_samples(to_GMM)
-# 3.2) Prediction probability
-EM_pred_prob = gmm.predict_proba(to_GMM)
-
-gmm_n_clusters_ = len(np.unique(gmm_labels))
-
-# 5) Count what?
-gmm_unique, gmm_counts = np.unique(gmm_labels, return_counts=True)
-gmm_counts = pd.DataFrame(np.asarray((gmm_unique, gmm_counts )).T, columns=['Label', 'Number'])
-gmm_labels_df = Std_clust_df.copy(deep=True)
-gmm_labels_df['gmm_labels'] = gmm_labels
-gmm_centroids = (gmm_labels_df.groupby('gmm_labels').mean())
-gmm_centroids = scaler.inverse_transform(X=gmm_centroids)
-gmm_centroids = pd.DataFrame(gmm_centroids, columns=Std_clust_df.columns)
-gmm_centroids_df = pd.concat([gmm_centroids, gmm_counts], axis=1)
-print(" Labels: \n {} \n Centroids: \n {}".format(gmm_labels,gmm_centroids ))
-# Print results
-print('Gaussian-Mixture: {}'.format(number_K,silhouette_score(Std_clust_df,gmm_labels,metric='euclidean')))
-print(gmm_centroids_df)
-ms_centroids_df.to_csv("gaussian_centroids.csv")
-fig = plt.figure(figsize=(30, 100))
-tidy = gmm_labels_df.melt(id_vars='gmm_labels')
-sns.barplot(x='gmm_labels', y='value', hue='variable', data=tidy)
-plt.show()
-
 ###################################################
 # ---------------- Cluster Visualisation ------------------
 ###################################################
 # 0.1) Make sure that the 'labels' values correspond to the
 # clustering method you pretend to plot
 # #ms.labels_,db.labels_
-names_methods_list =["PCA + KMeans", "Kmeans","Gaussian-Mixture", "Agglomerative (Ward distance"] # "Mean-Shift", "DBSCAN",
+names_methods_list =["Kmeans","Gaussian-Mixture", "Agglomerative (Ward distance"] # "Mean-Shift", "DBSCAN",
 for i, name in enumerate(names_methods_list):
-    label_methods_list = [pca_km.labels_, kmeans_labels, gmm_labels, model.labels_]
+    # name="Mean-Shift"
+    # labels_for_pca =ms.labels_
+    label_methods_list = [kmeans_labels, gmm_labels, model.labels_]
     labels_for_pca = label_methods_list[i]
     print(len(np.unique(labels_for_pca)))
     # 0.2) Set the data frame to analyse
@@ -1324,7 +1330,7 @@ for i, name in enumerate(names_methods_list):
         elif labels_for_pca[i] == 8:
             c9 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='b', marker='p')
 
-    plt.legend([c1,c2,c3,c4,c5],cluster_names[:len(np.unique(labels_for_pca))])
+    plt.legend([c1,c2,c3,c4,],cluster_names[:len(np.unique(labels_for_pca))])
     plt.title('%i' % len(np.unique(labels_for_pca) )+ ' clusters found from {} method'.format(name))
     plt.show()
 
@@ -1453,9 +1459,12 @@ features
 to_predict=df_outliers.dropna(axis=0, how='any')
 to_predict['km_labels']=clf.predict(to_predict)
 predict_labels_df = clust_df.copy(deep=True)
+
 predict_labels_df['km_labels'] = kmeans_labels
 clust_df_with_outliers = pd.concat([predict_labels_df,to_predict],axis=0, sort=True)
-
+clust_df_with_outliers_std = scaler.fit_transform(clust_df_with_outliers.iloc[:,:-1])
+clust_df_with_outliers_std_df = pd.DataFrame(clust_df_with_outliers_std, columns=clust_df.columns)
+clust_df_with_outliers_std_df['km_labels'] = clust_df_with_outliers['km_labels']
 with_outliers_unique, with_outliers_counts = np.unique(predict_labels_df['km_labels'].tolist(), return_counts=True)
 with_outliers_counts = pd.DataFrame(np.asarray((with_outliers_unique, with_outliers_counts)).T, columns=['Label', 'Number'])
 with_outliers_centroids = clust_df_with_outliers.groupby('km_labels').mean()
@@ -1463,7 +1472,7 @@ with_outliers_centroids_df = pd.concat([with_outliers_centroids, with_outliers_c
 print(with_outliers_centroids_df)
 model_centroids_df.to_csv("with_outliers_centroids.csv")
 fig = plt.figure(figsize=(30, 100))
-tidy = clust_df_with_outliers.melt(id_vars='km_labels')
+tidy = clust_df_with_outliers_std_df.melt(id_vars='km_labels')
 sns.barplot(x='km_labels', y='value', hue='variable', data=tidy)
 plt.show()
 
@@ -1490,6 +1499,3 @@ graph.write_png("clf_tree.png")
 # https://towardsdatascience.com/decision-tree-algorithm-explained-83beb6e78ef4
 # https://www.youtube.com/watch?v=z-AGmGmR6Z8
 # https://www.geeksforgeeks.org/python-decision-tree-regression-using-sklearn/
-
-
-

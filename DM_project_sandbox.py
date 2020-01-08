@@ -742,12 +742,14 @@ df_outliers.drop(['motor_premiums', 'household_premiums', 'health_premiums', 'li
 #########################################################
 # ------ Standardization & sub-setting data frame -------
 #########################################################
-
 # We are now going to scale the data so we can do effective clustering of our variables
+# This data frame name is already written on the clustering codes
+# Except for K-modes, which uses categorical variables...
 # Standardize the data to have a mean of ~0 and a variance of 1
 scaler = StandardScaler()
 X_std = scaler.fit_transform(clust_df)
 X_std_df = pd.DataFrame(X_std, columns=clust_df.columns)
+
 
 # plotting correlation plot after droping vars before clustering
 corr = X_std_df.corr()  # Calculate the correlation of the above variables
@@ -758,202 +760,29 @@ cmap = sns.diverging_palette(h_neg=210, h_pos=350, s=90, l=30, as_cmap=True)
 clustermap = sns.clustermap(data=corr, cmap="coolwarm")
 clustermap.savefig('corr_clust_clustermap.png')
 
-
 # split main clustering data frame into products and value data frames
 
-X_prod_std_df = X_std_df[['motor_premiums_pct',
+X_prod_df = clust_df[['motor_premiums_pct',
                           'household_premiums_pct',
                           'health_premiums_pct',
                           'life_premiums_pct',
                           'work_premiums_pct']]
 
-X_value_std_df = X_std_df[['cancelled_premiums_pct',
+X_value_df = clust_df[['cancelled_premiums_pct',
                            'claims_rate',
                            'customer_monetary_value',
                            'premium_wage_ratio']]
 
-# I need to standardize the outliers before predicting their clusters
-# with the classification tree. But I'm receiving an error when
-# I try to standardize. Maybe I cannot use the scaler again :(
-# Standardizing outliers data frame
-scaler_out = StandardScaler()
-X_std_out = scaler_out.fit_transform(df_outliers)
-X_std_out_df = pd.DataFrame(X_std_out, columns=df_outliers.columns)
+# Define the unstandardized data frame to work with from now:
+to_use_clust_df = clust_df.copy(deep=True)
 
-# Same sub-setting for outliers:
-X_prod_std_out_df = X_std_out_df[['motor_premiums_pct',
-                                  'household_premiums_pct',
-                                  'health_premiums_pct',
-                                  'life_premiums_pct',
-                                  'work_premiums_pct']]
-
-X_value_std_out_df = X_std_out_df[['cancelled_premiums_pct',
-                                   'claims_rate',
-                                   'customer_monetary_value',
-                                   'premium_wage_ratio']]
-
-
-# Define the standardized data frame to work with from now:
+# We are now going to scale the data so we can do effective clustering of our variables
 # This data frame name is already written on the clustering codes
 # Except for K-modes, which uses categorical variables...
-
-Std_clust_df = X_std_df.copy(deep=True)
-
-########################################################
-# ----------------------K-modes-------------------------
-########################################################
-# Selecting variables to use in K-modes and make Engage_df
-Engage_df = df_cat.join(df[['gross_monthly_salary', 'cust_tenure']])
-Engage_df.columns
-
-# Converting gross_monthly_salary into categorical variable, using bins
-Engage_df['salary_bin'] = pd.cut(Engage_df['gross_monthly_salary'],
-                                 [0, 1000, 2000, 3000, 4000, 5000, 6000],
-                                 labels=['0-1k', '1k-2k', '2k-3k', '3k-4k', '4k-5k', '5k-6k'])
-# Converting cust_pol_age into categorical variable, using bins
-Engage_df['tenure_bin'] = pd.cut(Engage_df['cust_tenure'],
-                                 [20, 25, 30, 35, 40, 45, 50],
-                                 labels=['20-25', '25-30', '30-35', '35-40', '40-45', '45-50'])
-
-# Drop 'gross_monthly_salary' and 'cust_pol_age', since the goal is to perform K-modes
-Engage_df = Engage_df.drop(['gross_monthly_salary', 'cust_tenure'], axis=1)
-# Take a look at the new Engage_df full categorical
-Engage_df.head()
-Engage_df['salary_bin'] = Engage_df['salary_bin'].astype(str)
-Engage_df['tenure_bin'] = Engage_df['tenure_bin'].astype(str)
-Engage_df.columns
-
-for col in Engage_df:
-    print(Engage_df[col].unique())
-
-# Choosing K for kmodes by comparing Cost against each K. Copied from:
-# https://www.kaggle.com/ashydv/bank-customer-clustering-k-modes-clustering
-cost = []
-for num_clusters in list(range(1, 10)):
-    kmode = KModes(n_clusters=num_clusters, init="Cao", n_init=30, verbose=1)
-    kmode.fit_predict(Engage_df)
-    cost.append(kmode.cost_)
-
-y = np.array([i for i in range(1, 10, 1)])
-plt.figure(figsize=(8, 5))
-plt.plot(y, cost,
-         linewidth=1.5,
-         linestyle="-",
-         marker="X",
-         markeredgecolor="salmon",
-         color="black")
-plt.title("K-Modes elbow graph", loc="left", fontweight="bold")
-plt.xlabel("Number of cluster")
-plt.ylabel("Cost")
-plt.axvline(x = 5, alpha = 0.4, color = "salmon", linestyle = "--")
-plt.show()
-
-## ------  K-modes with k of 3
-k = 4
-kmodes_clustering = KModes(n_clusters=k, init='Cao', verbose=1)
-kmode_labels = kmodes_clustering.fit_predict(Engage_df)
-
-# Turn the dummified df into two columns with PCA
-pca = PCA(2)
-plot_columns = pca.fit_transform(X_std_df)
-X_std_df.shape
-
-LABEL_COLOR_MAP = {0: 'b',
-                   1: 'g',
-                   2: 'r',
-                   3: 'c',
-                   4: 'm'}
-
-fig, ax = plt.subplots()
-for c in np.unique(kmode_labels):
-    ix = np.where(kmode_labels == c)
-    ax.scatter(plot_columns[:, 1][ix],
-               plot_columns[:, 0][ix],
-               c=LABEL_COLOR_MAP[c],
-               label=kmodes_clustering.cluster_centroids_[c],
-               s=30, marker='.')
-ax.legend()
-plt.title('K-modes over first 2 Principal Components, with %i' % k + ' clusters')
-fig.savefig("Kdo")
-plt.show()
-
-# Print the cluster centroids
-print("The mode of each variable for each cluster:\n{}".format(kmodes_clustering.cluster_centroids_)) # This gives the mode of each variable for each cluster.
-kmodes_centroids = pd.DataFrame(kmodes_clustering.cluster_centroids_,
-                                   columns=Engage_df.columns)
-
-kmodes_unique, kmodes_counts = np.unique(kmodes_clustering.labels_, return_counts=True)
-kmodes_counts = pd.DataFrame(np.asarray((kmodes_unique, kmodes_counts)).T, columns=['Label', 'Number'])
-kmodes_centroids_df = pd.concat([kmodes_centroids, kmodes_counts], axis=1)
-print(kmodes_centroids_df)
-del kmodes_counts, k,kmodes_unique,kmodes_centroids
-
-#########################################################
-# -------------- Self-Organizing Maps -------------------
-#########################################################
-X = Std_clust_df.values
-sm = SOMFactory().build(data=X,
-               mapsize=(20, 20),
-               normalization='var',
-               initialization='random',     #'random', 'pca'
-               component_names=Std_clust_df.columns,
-               lattice='hexa',              #'rect','hexa'
-               training='batch')            #'seq','batch'
-
-sm.train(n_job=4,
-         verbose='info',
-         train_rough_len=30,
-         train_finetune_len=50)
-# Comments about SOM:
-"""
-        :param data: data to be clustered, represented as a matrix of n rows,
-            as inputs and m cols as input features
-        :param neighborhood: neighborhood object calculator.  Options are:
-            - gaussian
-            - bubble
-            - manhattan (not implemented yet)
-            - cut_gaussian (not implemented yet)
-            - epanechicov (not implemented yet)
-        :param normalization: normalizer object calculator. Options are:
-            - var
-        :param mapsize: tuple/list defining the dimensions of the som.
-            If single number is provided is considered as the number of nodes.
-        :param mask: mask
-        :param mapshape: shape of the som. Options are:
-            - planar
-            - toroid (not implemented yet)
-            - cylinder (not implemented yet)
-        :param lattice: type of lattice. Options are:
-            - rect
-            - hexa
-        :param initialization: method to be used for initialization of the som.
-            Options are:
-            - pca
-            - random
-        :param name: name used to identify the som
-        :param training: Training mode (seq, batch)
-"""
-final_clusters = pd.DataFrame(sm._data, columns=Std_clust_df.columns)
-som_labels = pd.DataFrame(sm._bmu[0])
-final_clusters = pd.concat([final_clusters, som_labels], axis=1)
-
-final_clusters.rename(columns={0 : 'Labels'}, inplace=True)
-
-view2D = View2D(20, 20, "", text_size=7)
-view2D.show(sm, col_sz=5, which_dim="all", denormalize=True)
-plt.show()
-
-vhts = BmuHitsView(10, 10, "Hits Map", text_size=7)
-vhts.show(sm, anotate=True, onlyzeros=False, labelsize=10, cmap="Blues", logaritmic=False)
-
-u = sompy.umatrix.UMatrixView(50, 50, 'umat', show_axis=True, text_size=8, show_text=True)
-u.build_u_matrix(sm, distance=1000, row_normalized=False)
-u.show(sm, distance2=8000, row_normalized=False, show_data=True, contooor=False, blob=False)
-
-# K-Means Clustering
-sm.cluster(5)   # According to median method of Hierarchical Clustering
-hits = HitMapView(10, 10, "Clustering", text_size=7)
-a = hits.show(sm, labelsize=12)
+# Standardize the data to have a mean of ~0 and a variance of 1
+scaler = StandardScaler()
+Std_clust = scaler.fit_transform(to_use_clust_df)
+Std_clust_df = pd.DataFrame(Std_clust, columns=to_use_clust_df.columns)
 
 #########################################################
 # --------------------- PCA + KMeans --------------------
@@ -1040,14 +869,11 @@ plt.title("KMeans using PCs and {} clusters".format(n_clusters))
 plt.show()
 # Print the cluster centroids
 print("The centroids of each variable for each cluster:\n{}".format(pca_km.cluster_centers_)) # This gives the centroids for each cluster.
-pca_km_centroids = pd.DataFrame(pca_km.cluster_centers_,
-                                   columns=PCA_components.iloc[:, :n_cols].columns)
-
+pca_km_centroids = pd.DataFrame(pca_km.cluster_centers_, columns=PCA_components.iloc[:, :n_cols].columns)
 pca_km_unique, pca_km_counts = np.unique(pca_km.labels_, return_counts=True)
 pca_km_counts = pd.DataFrame(np.asarray((pca_km_unique, pca_km_counts)).T, columns=['Label', 'Number'])
 pca_km_centroids_df = pd.concat([pca_km_centroids, pca_km_counts], axis=1)
 print(pca_km_centroids_df)
-del pca_km_unique,pca_km_centroids
 pca_km_labels_df = Std_clust_df.copy(deep=True)
 pca_km_labels_df['pca_km_labels'] = pca_km.labels_
 fig = plt.figure(figsize=(30, 100))
@@ -1055,7 +881,6 @@ tidy = pca_km_labels_df.melt(id_vars='pca_km_labels')
 sns.barplot(x='pca_km_labels', y='value', hue='variable', data=tidy)
 plt.legend(bbox_to_anchor=(1, 1), loc=2, borderaxespad=0.1)
 plt.show()
-
 # Print results
 print('pca_kmeans_{}: {}'.format(n_clusters,silhouette_score(Std_clust_df, pca_km.labels_,
                                            metric='euclidean')))
@@ -1076,6 +901,72 @@ plt.yticks(tick_list, pca_index, fontsize=10)
 plt.xticks(range(len(X_std_df.columns)), X_std_df.columns, rotation=65, ha='left')
 plt.show()
 
+#########################################################
+# -------------- Self-Organizing Maps -------------------
+#########################################################
+sm = SOMFactory().build(data=Std_clust_df.values,
+               mapsize=(20, 20),
+               normalization='var',
+               initialization='random',     #'random', 'pca'
+               component_names=Std_clust_df.columns,
+               lattice='hexa',              #'rect','hexa'
+               training='batch')            #'seq','batch'
+
+sm.train(n_job=4,
+         verbose='info',
+         train_rough_len=30,
+         train_finetune_len=50)
+# Comments about SOM:
+"""
+        :param data: data to be clustered, represented as a matrix of n rows,
+            as inputs and m cols as input features
+        :param neighborhood: neighborhood object calculator.  Options are:
+            - gaussian
+            - bubble
+            - manhattan (not implemented yet)
+            - cut_gaussian (not implemented yet)
+            - epanechicov (not implemented yet)
+        :param normalization: normalizer object calculator. Options are:
+            - var
+        :param mapsize: tuple/list defining the dimensions of the som.
+            If single number is provided is considered as the number of nodes.
+        :param mask: mask
+        :param mapshape: shape of the som. Options are:
+            - planar
+            - toroid (not implemented yet)
+            - cylinder (not implemented yet)
+        :param lattice: type of lattice. Options are:
+            - rect
+            - hexa
+        :param initialization: method to be used for initialization of the som.
+            Options are:
+            - pca
+            - random
+        :param name: name used to identify the som
+        :param training: Training mode (seq, batch)
+"""
+final_clusters = pd.DataFrame(sm._data, columns=Std_clust_df.columns)
+som_labels = pd.DataFrame(sm._bmu[0])
+final_clusters = pd.concat([final_clusters, som_labels], axis=1)
+
+final_clusters.rename(columns={0 : 'Labels'}, inplace=True)
+
+view2D = View2D(20, 20, "", text_size=7)
+view2D.show(sm, col_sz=5, which_dim="all", denormalize=True)
+plt.show()
+
+vhts = BmuHitsView(10, 10, "Hits Map", text_size=7)
+vhts.show(sm, anotate=True, onlyzeros=False, labelsize=10, cmap="Blues", logaritmic=False)
+
+u = sompy.umatrix.UMatrixView(50, 50, 'umat', show_axis=True, text_size=8, show_text=True)
+u.build_u_matrix(sm, distance=1000, row_normalized=False)
+u.show(sm, distance2=8000, row_normalized=False, show_data=True, contooor=False, blob=False)
+
+# K-Means Clustering
+sm.cluster(5)   # According to median method of Hierarchical Clustering
+hits = HitMapView(10, 10, "Clustering", text_size=7)
+a = hits.show(sm, labelsize=12)
+
 ########################################################
 # ----------------------K-means-------------------------
 ########################################################
@@ -1088,35 +979,116 @@ init_methods = ['points', '++']
 number_K = 5
 keys, centroids_list, labels_list = compare_init_methods(Std_clust_df.values, init_methods,number_K)
 
-# pick best kmeans iteration and initialisation method from plots above (please change accordingly)
-#best_init = 3
+# pick best initialisation method from plots above (please change accordingly)
+
 best_method = "++"
 
 centroids_dict = dict(zip(keys, centroids_list))
 labels_dict = dict(zip(keys, labels_list))
 kmeans_labels =list(labels_dict[best_method])
-kmeans_centroids = centroids_dict[best_method]
-print(" Labels: \n {} \n Centroids: \n {}".format(kmeans_labels,
-                                                  scaler.inverse_transform(X=centroids_dict[best_method])))
-
-
+kmeans_centroids = scaler.inverse_transform(X=centroids_dict[best_method])
+print(" Labels: \n {} \n Centroids: \n {}".format(kmeans_labels,kmeans_centroids ))
 # Print results
-print('kmeans_{}: {}'.format(number_K,silhouette_score(Std_clust_df, pca_km.labels_,
-                                           metric='euclidean')))
-
-km_centroids = pd.DataFrame(kmeans_centroids,
-                                   columns=Std_clust_df.columns)
-
+print('kmeans_{}: {}'.format(number_K,silhouette_score(Std_clust_df, pca_km.labels_,metric='euclidean')))
+km_centroids = pd.DataFrame(kmeans_centroids, columns=Std_clust_df.columns)
 km_unique, km_counts = np.unique(kmeans_labels, return_counts=True)
 km_counts = pd.DataFrame(np.asarray((km_unique, km_counts)).T, columns=['Label', 'Number'])
 km_centroids_df = pd.concat([km_centroids, km_counts], axis=1)
 print(km_centroids_df)
+km_centroids_df.to_csv("kmeans_centroids.csv")
 km_labels_df = Std_clust_df.copy(deep=True)
 km_labels_df['km_labels'] = kmeans_labels
 fig = plt.figure(figsize=(30, 100))
 tidy = km_labels_df.melt(id_vars='km_labels')
 sns.barplot(x='km_labels', y='value', hue='variable', data=tidy)
 plt.show()
+
+########################################################
+# ----------------------K-modes-------------------------
+########################################################
+# Selecting variables to use in K-modes and make Engage_df
+Engage_df = df_cat.join(df[['gross_monthly_salary', 'cust_tenure']])
+Engage_df.columns
+
+# Converting gross_monthly_salary into categorical variable, using bins
+Engage_df['salary_bin'] = pd.cut(Engage_df['gross_monthly_salary'],
+                                 [0, 1000, 2000, 3000, 4000, 5000, 6000],
+                                 labels=['0-1k', '1k-2k', '2k-3k', '3k-4k', '4k-5k', '5k-6k'])
+# Converting cust_pol_age into categorical variable, using bins
+Engage_df['tenure_bin'] = pd.cut(Engage_df['cust_tenure'],
+                                 [20, 25, 30, 35, 40, 45, 50],
+                                 labels=['20-25', '25-30', '30-35', '35-40', '40-45', '45-50'])
+
+# Drop 'gross_monthly_salary' and 'cust_pol_age', since the goal is to perform K-modes
+Engage_df = Engage_df.drop(['gross_monthly_salary', 'cust_tenure'], axis=1)
+# Take a look at the new Engage_df full categorical
+Engage_df.head()
+Engage_df['salary_bin'] = Engage_df['salary_bin'].astype(str)
+Engage_df['tenure_bin'] = Engage_df['tenure_bin'].astype(str)
+Engage_df.columns
+
+for col in Engage_df:
+    print(Engage_df[col].unique())
+
+# Choosing K for kmodes by comparing Cost against each K. Copied from:
+# https://www.kaggle.com/ashydv/bank-customer-clustering-k-modes-clustering
+cost = []
+for num_clusters in list(range(1, 10)):
+    kmode = KModes(n_clusters=num_clusters, init="Cao", n_init=30, verbose=1)
+    kmode.fit_predict(Engage_df)
+    cost.append(kmode.cost_)
+
+y = np.array([i for i in range(1, 10, 1)])
+plt.figure(figsize=(8, 5))
+plt.plot(y, cost,
+         linewidth=1.5,
+         linestyle="-",
+         marker="X",
+         markeredgecolor="salmon",
+         color="black")
+plt.title("K-Modes elbow graph", loc="left", fontweight="bold")
+plt.xlabel("Number of cluster")
+plt.ylabel("Cost")
+plt.axvline(x = 5, alpha = 0.4, color = "salmon", linestyle = "--")
+plt.show()
+
+## ------  K-modes with k of 3
+k = 3
+kmodes_clustering = KModes(n_clusters=k, init='Cao', verbose=1)
+kmode_labels = kmodes_clustering.fit_predict(Engage_df)
+
+# Turn the dummified df into two columns with PCA
+pca = PCA(2)
+plot_columns = pca.fit_transform(X_std_df)
+X_std_df.shape
+
+LABEL_COLOR_MAP = {0: 'b',
+                   1: 'g',
+                   2: 'r',
+                   3: 'c',
+                   4: 'm'}
+
+fig, ax = plt.subplots()
+for c in np.unique(kmode_labels):
+    ix = np.where(kmode_labels == c)
+    ax.scatter(plot_columns[:, 1][ix],
+               plot_columns[:, 0][ix],
+               c=LABEL_COLOR_MAP[c],
+               label=kmodes_clustering.cluster_centroids_[c],
+               s=30, marker='.')
+ax.legend()
+plt.title('K-modes over first 2 Principal Components, with %i' % k + ' clusters')
+fig.savefig("Kdo")
+plt.show()
+
+# Print the cluster centroids
+print("The mode of each variable for each cluster:\n{}".format(kmodes_clustering.cluster_centroids_)) # This gives the mode of each variable for each cluster.
+kmodes_centroids = pd.DataFrame(kmodes_clustering.cluster_centroids_,columns=Engage_df.columns)
+
+kmodes_unique, kmodes_counts = np.unique(kmodes_clustering.labels_, return_counts=True)
+kmodes_counts = pd.DataFrame(np.asarray((kmodes_unique, kmodes_counts)).T, columns=['Label', 'Number'])
+kmodes_centroids_df = pd.concat([kmodes_centroids, kmodes_counts], axis=1)
+print(kmodes_centroids_df)
 
 #########################################################
 # ---------------- Hierarchical clustering--------------
@@ -1175,7 +1147,11 @@ model_unique, model_counts = np.unique(model.labels_, return_counts=True)
 model_counts = pd.DataFrame(np.asarray((model_unique, model_counts)).T, columns=['Label', 'Number'])
 model_labels_df = Std_clust_df.copy(deep=True)
 model_labels_df['agg_labels'] = model.labels_
-model_centroids = model_labels_df.groupby('agg_labels').mean()
+model_centroids = scaler.inverse_transform(X=model_labels_df.groupby('agg_labels').mean())
+model_centroids = pd.DataFrame(model_centroids, columns=Std_clust_df.columns)
+print(" Labels: \n {} \n Centroids: \n {}".format(model.labels_,model_centroids ))
+# Print results
+print('agg_cluster: {}'.format(number_K,silhouette_score(Std_clust_df, model.labels_,metric='euclidean')))
 model_centroids_df = pd.concat([model_centroids, model_counts], axis=1)
 print(model_centroids_df)
 model_centroids_df.to_csv("agg_centroids.csv")
@@ -1207,8 +1183,12 @@ dbs_unique, dbs_counts = np.unique(db.labels_, return_counts=True)
 dbs_counts = pd.DataFrame(np.asarray((dbs_unique, dbs_counts)).T, columns=['Label', 'Number'])
 dbs_labels_df = Std_clust_df.copy(deep=True)
 dbs_labels_df['dbscan_labels'] = db.labels_
-dbs_centroids = (dbs_labels_df.loc[dbs_labels_df.dbscan_labels!=-1, :]
-                    .groupby('dbscan_labels').mean())
+dbs_centroids = (dbs_labels_df.loc[dbs_labels_df.dbscan_labels!=-1, :].groupby('dbscan_labels').mean())
+dbs_centroids = scaler.inverse_transform(X=dbs_centroids)
+dbs_centroids = pd.DataFrame(dbs_centroids, columns=Std_clust_df.columns)
+print(" Labels: \n {} \n Centroids: \n {}".format(db.labels_,dbs_centroids ))
+# Print results
+print('DBSCAN: {}'.format(number_K,silhouette_score(Std_clust_df,db.labels_,metric='euclidean')))
 dbs_centroids_df = pd.concat([dbs_centroids, dbs_counts.loc[dbs_counts.Label!=-1, :].reset_index()], axis=1)
 print(dbs_centroids_df)
 dbs_centroids_df.to_csv("dbs_centroids.csv")
@@ -1239,16 +1219,16 @@ ms_cluster_centers = ms.cluster_centers_
 # Count the number of unique labels (clusters)
 ms_n_clusters_ = len(np.unique(ms.labels_))
 # # 4) Re-scale the cluster_centers
-# ms_cluster_centers2=scaler.inverse_transform(X=ms_cluster_centers)
+ms_cluster_centers2=scaler.inverse_transform(X=ms_cluster_centers)
 # Print the cluster centroids
-print("The centroids of each variable for each cluster:\n{}".format(ms_cluster_centers)) # This gives the centroids for each cluster.
-ms_centroids = pd.DataFrame(ms.cluster_centers_,
-                                   columns=to_MS.columns)
+print(" Labels: \n {} \n Centroids: \n {}".format(ms.labels_,ms_cluster_centers2 ))
+print('Mean-Shift: {}'.format(number_K,silhouette_score(Std_clust_df,ms.labels_,metric='euclidean')))
+ms_centroids = pd.DataFrame(ms_cluster_centers2,columns=to_MS.columns)
 ms_unique, ms_counts = np.unique(ms.labels_, return_counts=True)
 ms_counts = pd.DataFrame(np.asarray((ms_unique,ms_counts)).T, columns=['Label', 'Number'])
 ms_centroids_df = pd.concat([ms_centroids, ms_counts], axis=1)
 print(ms_centroids_df)
-del ms_unique, ms_counts,ms_centroids
+ms_centroids_df.to_csv("meanshift_centroids.csv")
 ms_labels_df = Std_clust_df.copy(deep=True)
 ms_labels_df['ms_labels'] = ms.labels_
 fig = plt.figure(figsize=(30, 100))
@@ -1286,10 +1266,15 @@ gmm_unique, gmm_counts = np.unique(gmm_labels, return_counts=True)
 gmm_counts = pd.DataFrame(np.asarray((gmm_unique, gmm_counts )).T, columns=['Label', 'Number'])
 gmm_labels_df = Std_clust_df.copy(deep=True)
 gmm_labels_df['gmm_labels'] = gmm_labels
-gmm_centroids_df = (gmm_labels_df.loc[gmm_labels_df.gmm_labels!=-1, :]
-                    .groupby('gmm_labels').mean())
+gmm_centroids = (gmm_labels_df.groupby('gmm_labels').mean())
+gmm_centroids = scaler.inverse_transform(X=gmm_centroids)
+gmm_centroids = pd.DataFrame(gmm_centroids, columns=Std_clust_df.columns)
+gmm_centroids_df = pd.concat([gmm_centroids, gmm_counts], axis=1)
+print(" Labels: \n {} \n Centroids: \n {}".format(gmm_labels,gmm_centroids ))
+# Print results
+print('Gaussian-Mixture: {}'.format(number_K,silhouette_score(Std_clust_df,gmm_labels,metric='euclidean')))
 print(gmm_centroids_df)
-del gmm_unique, gmm_counts
+ms_centroids_df.to_csv("gaussian_centroids.csv")
 fig = plt.figure(figsize=(30, 100))
 tidy = gmm_labels_df.melt(id_vars='gmm_labels')
 sns.barplot(x='gmm_labels', y='value', hue='variable', data=tidy)
@@ -1300,43 +1285,48 @@ plt.show()
 ###################################################
 # 0.1) Make sure that the 'labels' values correspond to the
 # clustering method you pretend to plot
-labels_for_pca = ms.labels_
-print(len(np.unique(labels_for_pca)))
-# 0.2) Set the data frame to analyse
-# It should be standardized!
-df_for_pca = Std_clust_df
+# #ms.labels_,db.labels_
+names_methods_list =["PCA + KMeans", "Kmeans","Gaussian-Mixture", "Agglomerative (Ward distance"] # "Mean-Shift", "DBSCAN",
+for i, name in enumerate(names_methods_list):
+    label_methods_list = [pca_km.labels_, kmeans_labels, gmm_labels, model.labels_]
+    labels_for_pca = label_methods_list[i]
+    print(len(np.unique(labels_for_pca)))
+    # 0.2) Set the data frame to analyse
+    # It should be standardized!
+    df_for_pca = Std_clust_df
 
-###################################################
-#------------ Plotting 2D PCA results ------------
-###################################################
-fig = plt.figure(figsize=(30, 100))
-pca = PCA(n_components=2).fit(df_for_pca)  # fit to 2 principal components
-pca_2d = pca.transform(df_for_pca)
-cluster_names=['Cluster 1', 'Cluster 2', 'Cluster 3', 'Cluster 4','Cluster 5', 'Cluster 6', 'Cluster 7', 'Cluster 8', 'Cluster 9']
-# Set a marker and a color to each label (cluster)
-for i in range(0, pca_2d.shape[0]):
-    if labels_for_pca[i] == 0:
-        c1 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='r', marker='+')
-    elif labels_for_pca[i] == 1:
-        c2 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='w', marker='o')
-    elif labels_for_pca[i] == 2:
-        c3 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='b', marker='*')
-    elif labels_for_pca[i] == 3:
-        c4 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='y', marker='s')
-    elif labels_for_pca[i] == 4:
-        c5 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='m', marker='p')
-    elif labels_for_pca[i] == 5:
-        c6 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='c', marker='H')
-    elif labels_for_pca[i] == 6:
-        c7 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='k', marker='o')
-    elif labels_for_pca[i] == 7:
-        c8 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='g', marker='.')
-    elif labels_for_pca[i] == 8:
-        c9 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='b', marker='p')
-plt.legend([c1,c2,c3,c4,c5],
-           cluster_names[:len(np.unique(labels_for_pca))])
-plt.title('%i' % len(np.unique(labels_for_pca) )+ ' clusters found')
-plt.show()
+    ###################################################
+    #------------ Plotting 2D PCA results ------------
+    ###################################################
+
+    fig = plt.figure(figsize=(30, 100))
+    pca = PCA(n_components=2).fit(df_for_pca)  # fit to 2 principal components
+    pca_2d = pca.transform(df_for_pca)
+    cluster_names=['Cluster 1', 'Cluster 2', 'Cluster 3', 'Cluster 4','Cluster 5', 'Cluster 6', 'Cluster 7', 'Cluster 8', 'Cluster 9']
+    # Set a marker and a color to each label (cluster)
+    for i in range(0, pca_2d.shape[0]):
+        if labels_for_pca[i] == 0:
+            c1 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='r', marker='+')
+        elif labels_for_pca[i] == 1:
+            c2 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='g', marker='o')
+        elif labels_for_pca[i] == 2:
+            c3 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='b', marker='*')
+        elif labels_for_pca[i] == 3:
+            c4 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='y', marker='s')
+        elif labels_for_pca[i] == 4:
+            c5 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='m', marker='p')
+        elif labels_for_pca[i] == 5:
+            c6 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='c', marker='H')
+        elif labels_for_pca[i] == 6:
+            c7 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='k', marker='o')
+        elif labels_for_pca[i] == 7:
+            c8 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='w', marker='.')
+        elif labels_for_pca[i] == 8:
+            c9 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='b', marker='p')
+
+    plt.legend([c1,c2,c3,c4,c5],cluster_names[:len(np.unique(labels_for_pca))])
+    plt.title('%i' % len(np.unique(labels_for_pca) )+ ' clusters found from {} method'.format(name))
+    plt.show()
 
 ###################################################
 #------------ Plotting 3D PCA results ------------
@@ -1415,24 +1405,6 @@ print('Gaussian-Mixture: {}'.format(silhouette_score(Std_clust_df, gmm_labels,
 print('Agglomerative: {}'.format(silhouette_score(Std_clust_df, model.labels_,
                                            metric='euclidean')))
 
-
-
-
-###################################################
-# ---------- Re-Scaling data frame ----------------
-###################################################
-
-# Re-scale Std_clust_df before applying the Decision Tree prediction
-scaler.inverse_transform(X=X_std)
-clust_df = pd.DataFrame(scaler.inverse_transform(X=X_std),
-                        columns=X_std_df.columns, index=X_std_df.index)
-
-# If needed:
-# Add the clusters labels to clust_df depending on the clustering technique
-# selected_labels = pca_km.labels_
-# clust_df['Labels'] = selected_labels
-# clust_df.head()
-
 #########################################################
 # ------------- Decision Tree Classifier ----------------
 #########################################################
@@ -1476,23 +1448,6 @@ print(classification_report(y_test, predict_test))
 features = list(DT_df.columns)
 features
 
-# Plotting Decision Tree
-# Create DOT data
-dot_data = tree.export_graphviz(clf,
-                                out_file=None,
-                                feature_names=DT_df.columns,
-                                class_names=None,
-                                filled=True,
-                                rounded=True,
-                                special_characters=True)
-
-# Draw graph
-graph = pydotplus.graph_from_dot_data(dot_data)
-# Show graph
-Image(graph.create_png())
-# Create PNG
-graph.write_png("clf_tree.png")
-
 # -------- Predicting clusters for outliers df ----------
 # Evaluation of the decision tree results
 to_predict=df_outliers.dropna(axis=0, how='any')
@@ -1513,6 +1468,23 @@ sns.barplot(x='km_labels', y='value', hue='variable', data=tidy)
 plt.show()
 
 
+
+# Plotting Decision Tree
+# Create DOT data
+dot_data = tree.export_graphviz(clf,
+                                out_file=None,
+                                feature_names=DT_df.columns,
+                                class_names=None,
+                                filled=True,
+                                rounded=True,
+                                special_characters=True)
+
+# Draw graph
+graph = pydotplus.graph_from_dot_data(dot_data)
+# Show graph
+Image(graph.create_png())
+# Create PNG
+graph.write_png("clf_tree.png")
 
 # References:
 # https://towardsdatascience.com/decision-tree-algorithm-explained-83beb6e78ef4

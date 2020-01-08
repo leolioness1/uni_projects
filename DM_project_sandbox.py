@@ -845,7 +845,7 @@ plt.plot(y, cost,
 plt.title("K-Modes elbow graph", loc="left", fontweight="bold")
 plt.xlabel("Number of cluster")
 plt.ylabel("Cost")
-plt.axvline(x = 4, alpha = 0.4, color = "salmon", linestyle = "--")
+plt.axvline(x = 5, alpha = 0.4, color = "salmon", linestyle = "--")
 plt.show()
 
 ## ------  K-modes with k of 3
@@ -1007,6 +1007,7 @@ plt.show()
 
 # Most of the variance is captured by the first 4 Principal Components therefore we perform kmeans using the first 4 Components
 n_cols = 4
+
 max_k=10
 n_clusters = 5
 #elbow plot
@@ -1129,16 +1130,27 @@ for n, method in enumerate(methods):
         Z = linkage(final_clusters.drop('Labels', axis=1).values, method)
         ax = fig.add_subplot(len(methods), 1, n + 1)
         dendrogram(Z, ax=ax, labels=df.index, truncate_mode='level',p=3, color_threshold=0.62 * max(Z[:, 2]))
-        ax.tick_params(axis='x', which='major', labelsize=20)
-        ax.tick_params(axis='y', which='major', labelsize=20)
+        #ax.tick_params(axis='x', which='major', labelsize=20)
+        #ax.tick_params(axis='y', which='major', labelsize=20)
         ax.set_xlabel("Number of points in node (or index of point if no parenthesis).")
         ax.set_title('{} Method Dendrogram'.format(method))
-
+        plt.axis('off')
     except Exception as e:
         print('Error caught:'.format(e))
 
 fig.savefig('all_methods_dendrogram.png'.format(method))
 plt.show()
+# Ward variance minimization algorithm provides the most clear clusters, it is based on the Eucleadian distance
+# perform hierarchical clustering on the output of the SOM # can change linkage distance calculation method e.g centroid
+Z = linkage(final_clusters.drop('Labels', axis=1).values, 'ward')
+method = "ward"
+fig = plt.figure(figsize=(30, 20))
+ax = fig.add_subplot(1, 1, 1)
+dendrogram(Z, ax=ax, labels=df.index, truncate_mode='lastp', color_threshold=0.62 * max(Z[:, 2]))
+ax.tick_params(axis='y', which='major', labelsize=20)
+ax.set_title('{} Method Dendrogram'.format(method))
+fig.savefig('{}_method_dendrogram.png'.format(method))
+
 #https://scikit-learn.org/stable/auto_examples/cluster/plot_agglomerative_clustering.html#sphx-glr-auto-examples-cluster-plot-agglomerative-clustering-py
 fig = plt.figure(figsize=(30, 100))
 k_list=[4,5]
@@ -1227,9 +1239,9 @@ ms_cluster_centers = ms.cluster_centers_
 # Count the number of unique labels (clusters)
 ms_n_clusters_ = len(np.unique(ms.labels_))
 # # 4) Re-scale the cluster_centers
-ms_cluster_centers2=scaler.inverse_transform(X=ms_cluster_centers)
+# ms_cluster_centers2=scaler.inverse_transform(X=ms_cluster_centers)
 # Print the cluster centroids
-print("The centroids of each variable for each cluster:\n{}".format(ms_cluster_centers2)) # This gives the centroids for each cluster.
+print("The centroids of each variable for each cluster:\n{}".format(ms_cluster_centers)) # This gives the centroids for each cluster.
 ms_centroids = pd.DataFrame(ms.cluster_centers_,
                                    columns=to_MS.columns)
 ms_unique, ms_counts = np.unique(ms.labels_, return_counts=True)
@@ -1321,7 +1333,7 @@ for i in range(0, pca_2d.shape[0]):
         c8 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='g', marker='.')
     elif labels_for_pca[i] == 8:
         c9 = plt.scatter(pca_2d[i, 0], pca_2d[i, 1], c='b', marker='p')
-plt.legend([c1,c2,c3,c4,c5,c6,c7,c8,c9],
+plt.legend([c1,c2,c3,c4,c5],
            cluster_names[:len(np.unique(labels_for_pca))])
 plt.title('%i' % len(np.unique(labels_for_pca) )+ ' clusters found')
 plt.show()
